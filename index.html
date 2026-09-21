@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Habits</title>
+<meta name="theme-color" content="#000000">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Habits">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="icon" href="icon.png">
+<style>
+  :root {
+    --bg: #000; --fg: #fff; --muted: #a0a0a0; --line: #2a2a2a;
+    --panel: #111; --accent: #3ddc84; --danger: #ff5c5c;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; background: var(--bg); color: var(--fg); }
+  body {
+    font: 18px/1.4 -apple-system, system-ui, sans-serif;
+    padding: calc(env(safe-area-inset-top) + 16px) 16px calc(env(safe-area-inset-bottom) + 32px);
+    max-width: 640px; margin: 0 auto;
+  }
+  button, input, textarea { font: inherit; color: inherit; }
+  button {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    min-height: 48px; padding: 0 16px; cursor: pointer;
+  }
+  button:active { background: #222; }
+  button.primary { background: var(--accent); color: #000; border-color: var(--accent); font-weight: 700; }
+  button.danger { color: var(--danger); }
+  button.small { min-height: 44px; min-width: 44px; padding: 0 10px; }
+
+  header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 16px; }
+  header h1 { font-size: 22px; margin: 0; font-weight: 600; }
+  .streak { font-size: 34px; font-weight: 800; color: var(--accent); }
+  .streak small { font-size: 14px; color: var(--muted); font-weight: 500; margin-left: 4px; }
+
+  section { margin-bottom: 24px; }
+  .section-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .section-head h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0; }
+
+  #notes-view {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+    padding: 14px 16px; min-height: 64px; word-wrap: break-word;
+  }
+  #notes-view:empty::before { content: "Tap to write your schedule…"; color: var(--muted); }
+  #notes-view h1 { font-size: 22px; margin: 8px 0 4px; }
+  #notes-view h2 { font-size: 19px; margin: 8px 0 4px; }
+  #notes-view h3 { font-size: 17px; margin: 8px 0 4px; color: var(--muted); }
+  #notes-view p { margin: 4px 0; }
+  #notes-view ul { margin: 4px 0; padding-left: 22px; }
+  #notes-view li { margin: 2px 0; }
+  #notes-edit {
+    display: none; width: 100%; min-height: 200px; resize: vertical;
+    background: var(--panel); border: 1px solid var(--accent); border-radius: 14px;
+    padding: 14px 16px; outline: none; font-size: 17px; line-height: 1.4;
+  }
+  .editing #notes-view { display: none; }
+  .editing #notes-edit { display: block; }
+
+  ul.list { list-style: none; margin: 0; padding: 0; }
+  li.item {
+    display: flex; align-items: center; gap: 12px; min-height: 64px;
+    padding: 8px 12px; margin-bottom: 8px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+  }
+  li.item .box {
+    flex: 0 0 32px; width: 32px; height: 32px; border-radius: 8px;
+    border: 2px solid var(--fg); display: grid; place-items: center;
+    transition: background .12s;
+  }
+  li.item .box svg { width: 22px; height: 22px; display: none; }
+  li.item.done .box { background: var(--accent); border-color: var(--accent); }
+  li.item.done .box svg { display: block; }
+  li.item .title { flex: 1; font-size: 19px; }
+  li.item.done .title { color: var(--muted); text-decoration: line-through; }
+  li.item .tag { font-size: 12px; color: var(--muted); }
+  li.item.no-streak .tag::before { content: "no streak"; }
+
+  li.item.edit { flex-wrap: wrap; }
+  li.item.edit input[type=text] {
+    flex: 1 1 100%; min-height: 48px; background: #000; border: 1px solid var(--line);
+    border-radius: 10px; padding: 0 12px;
+  }
+  li.item.edit .row { display: flex; gap: 8px; width: 100%; }
+  li.item.edit .row .grow { flex: 1; }
+  .toggle { display: flex; align-items: center; gap: 8px; font-size: 15px; color: var(--muted); }
+  .toggle input { width: 24px; height: 24px; accent-color: var(--accent); }
+
+  .add { display: flex; gap: 8px; margin-top: 8px; }
+  .add[hidden] { display: none; }
+  .add input { flex: 1; min-height: 48px; background: #000; border: 1px solid var(--line); border-radius: 10px; padding: 0 12px; }
+
+  .footer { display: flex; gap: 8px; margin-top: 32px; }
+  .footer button { flex: 1; }
+  .empty { color: var(--muted); padding: 16px 0; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1 id="date"></h1>
+  <div class="streak"><span id="streak">0</span><small>day streak</small></div>
+</header>
+
+<section id="notes">
+  <div class="section-head"><h2>Notes</h2><button class="small" id="notes-btn">Edit</button></div>
+  <div id="notes-view"></div>
+  <textarea id="notes-edit" placeholder="# This week&#10;- Mon: gym&#10;- **Tue**: deep work"></textarea>
+</section>
+
+<section id="todo">
+  <div class="section-head"><h2>Today</h2><button class="small" id="edit-btn">Edit list</button></div>
+  <ul class="list" id="items"></ul>
+  <div class="add" id="add" hidden>
+    <input type="text" id="add-input" placeholder="New item" autocomplete="off">
+    <button class="primary" id="add-btn">Add</button>
+  </div>
+</section>
+
+<div class="footer">
+  <button id="export">Export JSON</button>
+  <button id="import">Import JSON</button>
+  <input type="file" id="import-file" accept="application/json,.json" hidden>
+</div>
+
+<script>
+const KEY = 'habits.v1';
+const CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg>';
+
+// ---------- state ----------
+let state = load();
+let editingList = false;
+
+function load() {
+  try {
+    const s = JSON.parse(localStorage.getItem(KEY));
+    if (s && Array.isArray(s.items) && s.days) return s;
+  } catch {}
+  return { notes: '', items: [], days: {} };
+}
+function save() {
+  // Snapshot today's requirements so past days can be judged by what was required then.
+  const t = today();
+  const d = state.days[t] || { done: [] };
+  d.req = state.items.filter(i => i.streak).map(i => i.id);
+  d.done = d.done.filter(id => state.items.some(i => i.id === id));
+  state.days[t] = d;
+  localStorage.setItem(KEY, JSON.stringify(state));
+}
+
+// ---------- dates ----------
+function dayKey(d) {
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+function today() { return dayKey(new Date()); }
+function dayComplete(key) {
+  const d = state.days[key];
+  if (!d || !d.req || d.req.length === 0) return false;
+  return d.req.every(id => d.done.includes(id));
+}
+function streak() {
+  const d = new Date();
+  if (!dayComplete(dayKey(d))) d.setDate(d.getDate() - 1);
+  let n = 0;
+  while (dayComplete(dayKey(d))) { n++; d.setDate(d.getDate() - 1); }
+  return n;
+}
+
+// ---------- markdown (headings, bullets, bold, paragraphs) ----------
+function esc(s) { return s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+function inline(s) { return esc(s).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>'); }
+function md(src) {
+  const out = []; let inList = false, para = [];
+  const flushP = () => { if (para.length) { out.push('<p>' + para.map(inline).join('<br>') + '</p>'); para = []; } };
+  const closeList = () => { if (inList) { out.push('</ul>'); inList = false; } };
+  for (const raw of src.split('\n')) {
+    const line = raw.trimEnd();
+    let m;
+    if ((m = line.match(/^(#{1,3})\s+(.*)/))) { flushP(); closeList(); out.push(`<h${m[1].length}>${inline(m[2])}</h${m[1].length}>`); }
+    else if ((m = line.match(/^\s*[-*]\s+(.*)/))) { flushP(); if (!inList) { out.push('<ul>'); inList = true; } out.push('<li>' + inline(m[1]) + '</li>'); }
+    else if (line.trim() === '') { flushP(); closeList(); }
+    else { closeList(); para.push(line); }
+  }
+  flushP(); closeList();
+  return out.join('');
+}
+
+// ---------- render ----------
+const $ = id => document.getElementById(id);
+let renderedDay = null;
+
+function render() {
+  const t = today();
+  if (renderedDay !== t) { save(); renderedDay = t; } // roll over at midnight: new day gets its own record
+  $('date').textContent = new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+  $('streak').textContent = streak();
+  $('notes-view').innerHTML = md(state.notes);
+  $('edit-btn').textContent = editingList ? 'Done' : 'Edit list';
+  $('add').hidden = !editingList;
+
+  const done = state.days[t]?.done || [];
+  const ul = $('items'); ul.innerHTML = '';
+  if (!state.items.length) ul.innerHTML = '<li class="empty">No items yet. Tap "Edit list" to add some.</li>';
+  state.items.forEach((item, idx) => {
+    const li = document.createElement('li');
+    li.className = 'item' + (done.includes(item.id) ? ' done' : '') + (item.streak ? '' : ' no-streak') + (editingList ? ' edit' : '');
+    if (editingList) {
+      li.innerHTML = `
+        <input type="text" value="${esc(item.title)}" data-rename>
+        <div class="row">
+          <label class="toggle grow"><input type="checkbox" ${item.streak ? 'checked' : ''} data-streak> Counts toward streak</label>
+          <button class="small" data-up ${idx === 0 ? 'disabled' : ''}>▲</button>
+          <button class="small" data-down ${idx === state.items.length - 1 ? 'disabled' : ''}>▼</button>
+          <button class="small danger" data-del>✕</button>
+        </div>`;
+      li.querySelector('[data-rename]').onchange = e => { item.title = e.target.value.trim() || item.title; save(); render(); };
+      li.querySelector('[data-streak]').onchange = e => { item.streak = e.target.checked; save(); render(); };
+      li.querySelector('[data-up]').onclick = () => { state.items.splice(idx - 1, 0, state.items.splice(idx, 1)[0]); save(); render(); };
+      li.querySelector('[data-down]').onclick = () => { state.items.splice(idx + 1, 0, state.items.splice(idx, 1)[0]); save(); render(); };
+      li.querySelector('[data-del]').onclick = () => { if (confirm(`Delete "${item.title}"?`)) { state.items.splice(idx, 1); save(); render(); } };
+    } else {
+      li.innerHTML = `<div class="box">${CHECK}</div><div class="title">${esc(item.title)}</div><span class="tag"></span>`;
+      li.onclick = () => {
+        const d = state.days[today()] || (state.days[today()] = { done: [], req: [] });
+        const i = d.done.indexOf(item.id);
+        i >= 0 ? d.done.splice(i, 1) : d.done.push(item.id);
+        save(); render();
+      };
+    }
+    ul.appendChild(li);
+  });
+}
+
+// ---------- notes ----------
+function startNotes() {
+  $('notes').classList.add('editing');
+  $('notes-btn').textContent = 'Save';
+  $('notes-edit').value = state.notes;
+  $('notes-edit').focus();
+}
+function stopNotes() {
+  state.notes = $('notes-edit').value;
+  $('notes').classList.remove('editing');
+  $('notes-btn').textContent = 'Edit';
+  save(); render();
+}
+$('notes-view').onclick = startNotes;
+$('notes-btn').onclick = () => $('notes').classList.contains('editing') ? stopNotes() : startNotes();
+$('notes-edit').onblur = stopNotes;
+
+// ---------- list editing ----------
+$('edit-btn').onclick = () => { editingList = !editingList; render(); if (editingList) $('add-input').focus(); };
+function addItem() {
+  const title = $('add-input').value.trim();
+  if (!title) return;
+  state.items.push({ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), title, streak: true });
+  $('add-input').value = '';
+  save(); render(); $('add-input').focus();
+}
+$('add-btn').onclick = addItem;
+$('add-input').onkeydown = e => { if (e.key === 'Enter') addItem(); };
+
+// ---------- export / import ----------
+$('export').onclick = () => {
+  const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `habits-${today()}.json`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+};
+$('import').onclick = () => $('import-file').click();
+$('import-file').onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  try {
+    const s = JSON.parse(await f.text());
+    if (!Array.isArray(s.items) || typeof s.days !== 'object') throw new Error('bad file');
+    if (!confirm('Replace all current data with this file?')) return;
+    state = { notes: s.notes || '', items: s.items, days: s.days };
+    save(); render();
+  } catch { alert('Could not read that file.'); }
+  e.target.value = '';
+};
+
+// ---------- boot ----------
+render();
+document.addEventListener('visibilitychange', () => { if (!document.hidden) render(); });
+setInterval(() => { if (today() !== renderedDay) render(); }, 30000);
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
+</script>
+</body>
+</html>
