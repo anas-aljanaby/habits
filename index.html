@@ -2,296 +2,469 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
-<title>Habits</title>
-<meta name="theme-color" content="#000000">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Tally</title>
+<meta name="description" content="A daily checklist with a streak.">
+<meta name="theme-color" content="#080807">
+<meta name="color-scheme" content="dark">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Habits">
-<link rel="manifest" href="manifest.json">
-<link rel="apple-touch-icon" href="icon.png">
-<link rel="icon" href="icon.png">
+<meta name="apple-mobile-web-app-title" content="Tally">
+<meta name="format-detection" content="telephone=no">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
 <style>
   :root {
-    --bg: #000; --fg: #fff; --muted: #a0a0a0; --line: #2a2a2a;
-    --panel: #111; --accent: #3ddc84; --danger: #ff5c5c;
+    /* Warm neutral blacks, lifted in layers rather than one flat fill. */
+    --bg: #080807;
+    --glow: #1d1b17;
+    --surface-top: #1a1917;
+    --surface-bottom: #121110;
+    --raised: #242320;
+    --well: #0a0a09;
+    --line: rgba(255, 250, 235, 0.07);
+
+    --text: #f3efe6;
+    --text-2: #aaa498;
+    --text-3: #736e65;
+
+    --bone: #ece4d2;
+    --bone-shade: #d6ccb6;
+    --bone-ink: #1b1813;
+    --amber: #f4b545;
+    --amber-soft: rgba(244, 181, 69, 0.14);
+    --danger: #ff7a6b;
+
+    --serif: ui-serif, "New York", "Iowan Old Style", "Palatino", Georgia, serif;
+    --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+
+    --gutter: 16px;
   }
+
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  html, body { margin: 0; background: var(--bg); color: var(--fg); }
+  html { background: var(--bg); -webkit-text-size-adjust: 100%; }
   body {
-    font: 18px/1.4 -apple-system, system-ui, sans-serif;
-    padding: calc(env(safe-area-inset-top) + 16px) 16px calc(env(safe-area-inset-bottom) + 32px);
-    max-width: 640px; margin: 0 auto;
+    margin: 0;
+    min-height: 100dvh;
+    background: radial-gradient(120% 55% at 50% -8%, var(--glow) 0%, rgba(29, 27, 23, 0) 72%), var(--bg);
+    color: var(--text);
+    font: 17px/1.4 var(--sans);
+    -webkit-font-smoothing: antialiased;
   }
+  /* Fine grain so the dark reads as a material, not a void. */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.05;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
   button, input, textarea { font: inherit; color: inherit; }
   button {
-    background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
-    min-height: 48px; padding: 0 16px; cursor: pointer;
+    background: none;
+    border: 0;
+    padding: 0;
+    cursor: pointer;
+    touch-action: manipulation;
+    -webkit-user-select: none;
+    user-select: none;
   }
-  button:active { background: #222; }
-  button.primary { background: var(--accent); color: #000; border-color: var(--accent); font-weight: 700; }
-  button.danger { color: var(--danger); }
-  button.small { min-height: 44px; min-width: 44px; padding: 0 10px; }
+  button:disabled { cursor: default; }
+  :focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+  h1, h2, h3, h4, h5, p { margin: 0; }
+  ul, ol { list-style: none; margin: 0; padding: 0; }
 
-  header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 16px; }
-  header h1 { font-size: 22px; margin: 0; font-weight: 600; }
-  .streak { font-size: 34px; font-weight: 800; color: var(--accent); }
-  .streak small { font-size: 14px; color: var(--muted); font-weight: 500; margin-left: 4px; }
-
-  section { margin-bottom: 24px; }
-  .section-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-  .section-head h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0; }
-
-  #notes-view {
-    background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
-    padding: 14px 16px; min-height: 64px; word-wrap: break-word;
+  #app {
+    position: relative;
+    max-width: 480px;
+    margin: 0 auto;
+    padding: calc(env(safe-area-inset-top) + 6px) var(--gutter) calc(env(safe-area-inset-bottom) + 40px);
   }
-  #notes-view:empty::before { content: "Tap to write your schedule…"; color: var(--muted); }
-  #notes-view h1 { font-size: 22px; margin: 8px 0 4px; }
-  #notes-view h2 { font-size: 19px; margin: 8px 0 4px; }
-  #notes-view h3 { font-size: 17px; margin: 8px 0 4px; color: var(--muted); }
-  #notes-view p { margin: 4px 0; }
-  #notes-view ul { margin: 4px 0; padding-left: 22px; }
-  #notes-view li { margin: 2px 0; }
-  #notes-edit {
-    display: none; width: 100%; min-height: 200px; resize: vertical;
-    background: var(--panel); border: 1px solid var(--accent); border-radius: 14px;
-    padding: 14px 16px; outline: none; font-size: 17px; line-height: 1.4;
-  }
-  .editing #notes-view { display: none; }
-  .editing #notes-edit { display: block; }
 
-  ul.list { list-style: none; margin: 0; padding: 0; }
-  li.item {
-    display: flex; align-items: center; gap: 12px; min-height: 64px;
-    padding: 8px 12px; margin-bottom: 8px;
-    background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
-  }
-  li.item .box {
-    flex: 0 0 32px; width: 32px; height: 32px; border-radius: 8px;
-    border: 2px solid var(--fg); display: grid; place-items: center;
-    transition: background .12s;
-  }
-  li.item .box svg { width: 22px; height: 22px; display: none; }
-  li.item.done .box { background: var(--accent); border-color: var(--accent); }
-  li.item.done .box svg { display: block; }
-  li.item .title { flex: 1; font-size: 19px; }
-  li.item.done .title { color: var(--muted); text-decoration: line-through; }
-  li.item .tag { font-size: 12px; color: var(--muted); }
-  li.item.no-streak .tag::before { content: "no streak"; }
+  /* ---------- surfaces ---------- */
 
-  li.item.edit { flex-wrap: wrap; }
-  li.item.edit input[type=text] {
-    flex: 1 1 100%; min-height: 48px; background: #000; border: 1px solid var(--line);
-    border-radius: 10px; padding: 0 12px;
+  .surface {
+    background: linear-gradient(180deg, var(--surface-top), var(--surface-bottom));
+    border-radius: 22px;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 250, 235, 0.07),
+      inset 0 0 0 1px rgba(255, 250, 235, 0.035),
+      0 1px 1px rgba(0, 0, 0, 0.6),
+      0 20px 40px -18px rgba(0, 0, 0, 0.8);
   }
-  li.item.edit .row { display: flex; gap: 8px; width: 100%; }
-  li.item.edit .row .grow { flex: 1; }
-  .toggle { display: flex; align-items: center; gap: 8px; font-size: 15px; color: var(--muted); }
-  .toggle input { width: 24px; height: 24px; accent-color: var(--accent); }
 
-  .add { display: flex; gap: 8px; margin-top: 8px; }
-  .add[hidden] { display: none; }
-  .add input { flex: 1; min-height: 48px; background: #000; border: 1px solid var(--line); border-radius: 10px; padding: 0 12px; }
+  .round-btn {
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    color: var(--text);
+    background: linear-gradient(180deg, #2a2926, #1d1c1a);
+    box-shadow: inset 0 1px 0 rgba(255, 250, 235, 0.09), 0 1px 2px rgba(0, 0, 0, 0.6);
+  }
+  .round-btn svg { width: 22px; height: 22px; }
+  .round-btn:active { background: var(--raised); }
+  .round-btn:disabled { opacity: 0.28; }
+  .round-btn.danger { color: var(--danger); }
 
-  .footer { display: flex; gap: 8px; margin-top: 32px; }
-  .footer button { flex: 1; }
-  .empty { color: var(--muted); padding: 16px 0; }
+  .pill {
+    position: relative;
+    min-height: 34px;
+    padding: 0 15px;
+    border-radius: 999px;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text);
+    background: rgba(255, 250, 235, 0.08);
+  }
+  .pill::after { content: ""; position: absolute; inset: -6px -2px; } /* 44px hit area */
+  .pill:active { background: rgba(255, 250, 235, 0.14); }
+  .pill.is-primary { color: var(--bone-ink); background: var(--amber); }
+  .pill.is-primary:active { background: #e0a334; }
+
+  /* ---------- top bar ---------- */
+
+  .top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 56px;
+    margin-bottom: 8px;
+  }
+  .brand { display: flex; align-items: center; gap: 9px; font: 600 20px/1 var(--serif); letter-spacing: 0.01em; }
+  .mark { width: 30px; height: 23px; }
+  .back-btn {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    min-height: 44px;
+    padding-right: 12px;
+    margin-left: -8px;
+    font-size: 17px;
+    color: var(--text-2);
+  }
+  .back-btn svg { width: 26px; height: 26px; }
+  .back-btn:active { color: var(--text); }
+
+  /* ---------- day card: header + streak + week, one navigation unit ---------- */
+
+  .daycard { padding: 20px 16px 12px 18px; }
+  .daycard-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+  .dayname { font: 600 36px/1.05 var(--serif); letter-spacing: -0.01em; }
+  .dateline {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 32px;
+    margin-top: 4px;
+    font-size: 16px;
+    color: var(--text-2);
+  }
+  .today-tag, .today-btn {
+    position: relative;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--amber);
+    background: var(--amber-soft);
+  }
+  .today-btn { box-shadow: inset 0 0 0 1px rgba(244, 181, 69, 0.45); }
+  .today-btn::after { content: ""; position: absolute; inset: -8px -4px; }
+  .today-btn:active { background: rgba(244, 181, 69, 0.25); }
+  .stepper { display: flex; gap: 8px; margin-top: 2px; }
+
+  .week {
+    display: grid;
+    grid-template-columns: 62px 1fr;
+    align-items: stretch;
+    margin-top: 16px;
+    padding-top: 12px;
+    border-top: 1px solid var(--line);
+  }
+  .streak {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding-right: 10px;
+    border-right: 1px solid var(--line);
+  }
+  .streak-num {
+    font: 600 38px/1 var(--serif);
+    font-variant-numeric: lining-nums tabular-nums;
+    color: var(--text);
+  }
+  .streak.is-lit .streak-num { color: var(--amber); }
+  .streak-label { margin-top: 4px; font-size: 12px; line-height: 1.2; color: var(--text-3); }
+
+  .days { display: grid; grid-template-columns: repeat(7, 1fr); margin-left: 6px; }
+  .days li { position: relative; }
+  .day {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 8px 0 10px;
+    border-radius: 14px;
+  }
+  .day-label { font-size: 12px; line-height: 15px; font-weight: 500; color: var(--text-3); }
+  .is-today .day-label { color: var(--amber); font-weight: 700; }
+  .is-selected .day { background: rgba(255, 250, 235, 0.07); box-shadow: inset 0 1px 0 rgba(255, 250, 235, 0.06); }
+  .is-selected:not(.is-today) .day-label { color: var(--text); }
+
+  .tile {
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    border-radius: 9px;
+    background: var(--well);
+    box-shadow: inset 0 1.5px 3px rgba(0, 0, 0, 0.9), inset 0 0 0 1.5px rgba(255, 250, 235, 0.13), 0 1px 0 rgba(255, 250, 235, 0.05);
+  }
+  .tile svg { width: 18px; height: 18px; }
+  .is-done .tile {
+    color: var(--bone-ink);
+    background: linear-gradient(180deg, #f6efe2, var(--bone-shade));
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7), 0 1px 2px rgba(0, 0, 0, 0.6);
+  }
+  .is-missed .tile::after { content: ""; width: 10px; height: 2px; border-radius: 1px; background: var(--text-3); opacity: 0.7; }
+  .is-open .tile { box-shadow: inset 0 0 0 1.5px var(--amber), inset 0 2px 4px rgba(0, 0, 0, 0.9); }
+  .is-future .tile, .is-none .tile { background: transparent; box-shadow: inset 0 0 0 1.5px rgba(255, 250, 235, 0.08); }
+
+  /* Consecutive complete days are joined, so a streak reads as one continuous bar. */
+  .link-next::before, .link-prev::after {
+    content: "";
+    position: absolute;
+    top: 42px; /* 8px pad + 15px label + 8px gap + half the tile, minus half the bar */
+    height: 8px;
+    background: var(--bone-shade);
+  }
+  .link-next::before { left: 50%; right: -50%; }
+  .days li:last-child.link-next::before { right: -6px; }
+  .link-prev::after { left: -6px; right: 50%; }
+
+  /* ---------- sections ---------- */
+
+  .section-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 44px;
+    margin: 26px 4px 8px;
+  }
+  .section-head h2 { font: 600 22px/1.2 var(--serif); }
+  .section-head .count { font-size: 15px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+  .section-head .pill { margin-left: auto; }
+  .legend { margin: 10px 6px 0; font-size: 14px; line-height: 1.4; color: var(--text-3); }
+  .habits .legend:first-of-type:not(:last-child) { margin: 0 6px 12px; }
+
+  .empty { display: grid; justify-items: start; gap: 6px; padding: 22px 20px; color: var(--text-2); font-size: 16px; }
+  .empty-title { font-weight: 600; color: var(--text); }
+  .empty .pill { margin-top: 10px; }
+
+  /* ---------- checklist ---------- */
+
+  .rows { padding: 4px 0; }
+  .rows > li { position: relative; }
+  .rows > li + li::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 62px;
+    right: 0;
+    height: 1px;
+    background: var(--line);
+  }
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    width: 100%;
+    min-height: 62px;
+    padding: 12px 18px;
+    text-align: left;
+  }
+  .row:active { background: rgba(255, 250, 235, 0.03); }
+  .row-title { font-size: 17px; line-height: 1.3; }
+  .row.is-done .row-title { color: var(--text-2); }
+
+  .box {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    color: var(--bone-ink);
+    background: var(--well);
+    box-shadow: inset 0 1.5px 3px rgba(0, 0, 0, 0.9), inset 0 0 0 1.5px rgba(255, 250, 235, 0.24), 0 1px 0 rgba(255, 250, 235, 0.05);
+  }
+  .box.is-round { border-radius: 50%; }
+  .box svg { width: 18px; height: 18px; opacity: 0; }
+  .is-done .box {
+    background: linear-gradient(180deg, #f6efe2, var(--bone-shade));
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7), 0 1px 2px rgba(0, 0, 0, 0.6);
+  }
+  .is-done .box svg { opacity: 1; }
+  .box.pop { animation: pop 0.18s ease-out; }
+  @keyframes pop { 0% { transform: scale(0.8); } 65% { transform: scale(1.08); } 100% { transform: scale(1); } }
+  @media (prefers-reduced-motion: reduce) { .box.pop { animation: none; } }
+
+  /* ---------- edit mode ---------- */
+
+  .rows.is-editing > li + li::before { left: 88px; }
+  .edit-row {
+    display: flex;
+    align-items: center;
+    min-height: 62px;
+    padding: 0 6px 0 2px;
+    background: transparent;
+  }
+  .grip {
+    display: grid;
+    place-items: center;
+    width: 40px;
+    height: 56px;
+    color: var(--text-3);
+    touch-action: none;
+    cursor: grab;
+  }
+  .grip svg { width: 20px; height: 20px; }
+  .shape-btn { display: grid; place-items: center; width: 44px; height: 44px; }
+  .title-input {
+    flex: 1;
+    min-width: 0;
+    height: 44px;
+    margin: 0 4px;
+    padding: 0 8px;
+    border: 0;
+    border-radius: 10px;
+    background: transparent;
+    font-size: 17px;
+  }
+  .title-input:focus { outline: none; background: rgba(255, 250, 235, 0.05); }
+  .icon-btn { display: grid; place-items: center; width: 44px; height: 44px; color: var(--text-3); }
+  .icon-btn svg { width: 21px; height: 21px; }
+  .icon-btn.danger:active { color: var(--danger); }
+  .dragging {
+    z-index: 2;
+    border-radius: 16px;
+    background: var(--raised);
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 250, 235, 0.08);
+  }
+  .dragging::before, .dragging + li::before { opacity: 0; }
+
+  .add-row { display: flex; align-items: center; gap: 8px; margin-top: 10px; padding: 8px 8px 8px 18px; border-radius: 18px; }
+  .add-row input {
+    flex: 1;
+    min-width: 0;
+    height: 44px;
+    border: 0;
+    background: transparent;
+    font-size: 17px;
+    outline: none;
+  }
+  .add-row .pill { min-height: 40px; }
+  ::placeholder { color: var(--text-3); }
+
+  /* ---------- plan ---------- */
+
+  .plan-body { padding: 18px 20px 20px; min-height: 96px; cursor: text; }
+  .plan-body.is-editing { box-shadow: inset 0 0 0 1.5px rgba(244, 181, 69, 0.5), 0 20px 40px -18px rgba(0, 0, 0, 0.8); }
+  .placeholder { color: var(--text-3); font-size: 16px; line-height: 1.5; }
+  .plan-input, .note-input {
+    display: block;
+    width: 100%;
+    min-height: 120px;
+    padding: 0;
+    border: 0;
+    outline: none;
+    resize: none;
+    background: transparent;
+    font-size: 16px;
+    line-height: 1.55;
+    overflow: hidden;
+  }
+
+  .md { font-size: 16px; line-height: 1.5; color: var(--text); }
+  .md h3 { font: 600 22px/1.25 var(--serif); margin: 14px 0 6px; }
+  .md h4 { font-size: 17px; font-weight: 700; margin: 12px 0 4px; }
+  .md h5 { font-size: 15px; font-weight: 600; color: var(--text-2); margin: 10px 0 2px; }
+  .md > :first-child { margin-top: 0; }
+  .md strong { font-weight: 700; color: #fff; }
+  .md p { color: var(--text-2); }
+  .md p strong { color: var(--text); }
+  .md li { position: relative; padding-left: 18px; margin: 3px 0; }
+  .md li::before {
+    content: "";
+    position: absolute;
+    left: 2px;
+    top: 0.62em;
+    width: 6px;
+    height: 6px;
+    border-radius: 1.5px;
+    background: var(--bone-shade);
+  }
+  .md li.sub { margin-left: 18px; color: var(--text-2); }
+  .md li.sub::before { background: none; box-shadow: inset 0 0 0 1.5px var(--text-3); }
+  .md .gap { height: 8px; }
+
+  /* ---------- notes ---------- */
+
+  .page-title { margin: 4px 4px 18px; font: 600 36px/1.05 var(--serif); letter-spacing: -0.01em; }
+  .notes > li + li::before { left: 18px; }
+  .note {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    column-gap: 12px;
+    row-gap: 3px;
+    width: 100%;
+    padding: 15px 18px;
+    text-align: left;
+  }
+  .note:active { background: rgba(255, 250, 235, 0.03); }
+  .note-title, .note-snippet { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .note-title { font-weight: 600; }
+  .note time { font-size: 14px; color: var(--text-3); font-variant-numeric: tabular-nums; align-self: center; }
+  .note-snippet { grid-column: 1 / -1; font-size: 15px; color: var(--text-2); }
+
+  .note-sheet { padding: 20px; min-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 120px); }
+  .note-input { font-size: 17px; min-height: 60dvh; }
 </style>
 </head>
 <body>
-
-<header>
-  <h1 id="date"></h1>
-  <div class="streak"><span id="streak">0</span><small>day streak</small></div>
-</header>
-
-<section id="notes">
-  <div class="section-head"><h2>Notes</h2><button class="small" id="notes-btn">Edit</button></div>
-  <div id="notes-view"></div>
-  <textarea id="notes-edit" placeholder="# This week&#10;- Mon: gym&#10;- **Tue**: deep work"></textarea>
-</section>
-
-<section id="todo">
-  <div class="section-head"><h2>Today</h2><button class="small" id="edit-btn">Edit list</button></div>
-  <ul class="list" id="items"></ul>
-  <div class="add" id="add" hidden>
-    <input type="text" id="add-input" placeholder="New item" autocomplete="off">
-    <button class="primary" id="add-btn">Add</button>
-  </div>
-</section>
-
-<div class="footer">
-  <button id="export">Export JSON</button>
-  <button id="import">Import JSON</button>
-  <input type="file" id="import-file" accept="application/json,.json" hidden>
-</div>
-
-<script>
-const KEY = 'habits.v1';
-const CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg>';
-
-// ---------- state ----------
-let state = load();
-let editingList = false;
-
-function load() {
-  try {
-    const s = JSON.parse(localStorage.getItem(KEY));
-    if (s && Array.isArray(s.items) && s.days) return s;
-  } catch {}
-  return { notes: '', items: [], days: {} };
-}
-function save() {
-  // Snapshot today's requirements so past days can be judged by what was required then.
-  const t = today();
-  const d = state.days[t] || { done: [] };
-  d.req = state.items.filter(i => i.streak).map(i => i.id);
-  d.done = d.done.filter(id => state.items.some(i => i.id === id));
-  state.days[t] = d;
-  localStorage.setItem(KEY, JSON.stringify(state));
-}
-
-// ---------- dates ----------
-function dayKey(d) {
-  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-}
-function today() { return dayKey(new Date()); }
-function dayComplete(key) {
-  const d = state.days[key];
-  if (!d || !d.req || d.req.length === 0) return false;
-  return d.req.every(id => d.done.includes(id));
-}
-function streak() {
-  const d = new Date();
-  if (!dayComplete(dayKey(d))) d.setDate(d.getDate() - 1);
-  let n = 0;
-  while (dayComplete(dayKey(d))) { n++; d.setDate(d.getDate() - 1); }
-  return n;
-}
-
-// ---------- markdown (headings, bullets, bold, paragraphs) ----------
-function esc(s) { return s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
-function inline(s) { return esc(s).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>'); }
-function md(src) {
-  const out = []; let inList = false, para = [];
-  const flushP = () => { if (para.length) { out.push('<p>' + para.map(inline).join('<br>') + '</p>'); para = []; } };
-  const closeList = () => { if (inList) { out.push('</ul>'); inList = false; } };
-  for (const raw of src.split('\n')) {
-    const line = raw.trimEnd();
-    let m;
-    if ((m = line.match(/^(#{1,3})\s+(.*)/))) { flushP(); closeList(); out.push(`<h${m[1].length}>${inline(m[2])}</h${m[1].length}>`); }
-    else if ((m = line.match(/^\s*[-*]\s+(.*)/))) { flushP(); if (!inList) { out.push('<ul>'); inList = true; } out.push('<li>' + inline(m[1]) + '</li>'); }
-    else if (line.trim() === '') { flushP(); closeList(); }
-    else { closeList(); para.push(line); }
-  }
-  flushP(); closeList();
-  return out.join('');
-}
-
-// ---------- render ----------
-const $ = id => document.getElementById(id);
-let renderedDay = null;
-
-function render() {
-  const t = today();
-  if (renderedDay !== t) { save(); renderedDay = t; } // roll over at midnight: new day gets its own record
-  $('date').textContent = new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
-  $('streak').textContent = streak();
-  $('notes-view').innerHTML = md(state.notes);
-  $('edit-btn').textContent = editingList ? 'Done' : 'Edit list';
-  $('add').hidden = !editingList;
-
-  const done = state.days[t]?.done || [];
-  const ul = $('items'); ul.innerHTML = '';
-  if (!state.items.length) ul.innerHTML = '<li class="empty">No items yet. Tap "Edit list" to add some.</li>';
-  state.items.forEach((item, idx) => {
-    const li = document.createElement('li');
-    li.className = 'item' + (done.includes(item.id) ? ' done' : '') + (item.streak ? '' : ' no-streak') + (editingList ? ' edit' : '');
-    if (editingList) {
-      li.innerHTML = `
-        <input type="text" value="${esc(item.title)}" data-rename>
-        <div class="row">
-          <label class="toggle grow"><input type="checkbox" ${item.streak ? 'checked' : ''} data-streak> Counts toward streak</label>
-          <button class="small" data-up ${idx === 0 ? 'disabled' : ''}>▲</button>
-          <button class="small" data-down ${idx === state.items.length - 1 ? 'disabled' : ''}>▼</button>
-          <button class="small danger" data-del>✕</button>
-        </div>`;
-      li.querySelector('[data-rename]').onchange = e => { item.title = e.target.value.trim() || item.title; save(); render(); };
-      li.querySelector('[data-streak]').onchange = e => { item.streak = e.target.checked; save(); render(); };
-      li.querySelector('[data-up]').onclick = () => { state.items.splice(idx - 1, 0, state.items.splice(idx, 1)[0]); save(); render(); };
-      li.querySelector('[data-down]').onclick = () => { state.items.splice(idx + 1, 0, state.items.splice(idx, 1)[0]); save(); render(); };
-      li.querySelector('[data-del]').onclick = () => { if (confirm(`Delete "${item.title}"?`)) { state.items.splice(idx, 1); save(); render(); } };
-    } else {
-      li.innerHTML = `<div class="box">${CHECK}</div><div class="title">${esc(item.title)}</div><span class="tag"></span>`;
-      li.onclick = () => {
-        const d = state.days[today()] || (state.days[today()] = { done: [], req: [] });
-        const i = d.done.indexOf(item.id);
-        i >= 0 ? d.done.splice(i, 1) : d.done.push(item.id);
-        save(); render();
-      };
-    }
-    ul.appendChild(li);
-  });
-}
-
-// ---------- notes ----------
-function startNotes() {
-  $('notes').classList.add('editing');
-  $('notes-btn').textContent = 'Save';
-  $('notes-edit').value = state.notes;
-  $('notes-edit').focus();
-}
-function stopNotes() {
-  state.notes = $('notes-edit').value;
-  $('notes').classList.remove('editing');
-  $('notes-btn').textContent = 'Edit';
-  save(); render();
-}
-$('notes-view').onclick = startNotes;
-$('notes-btn').onclick = () => $('notes').classList.contains('editing') ? stopNotes() : startNotes();
-$('notes-edit').onblur = stopNotes;
-
-// ---------- list editing ----------
-$('edit-btn').onclick = () => { editingList = !editingList; render(); if (editingList) $('add-input').focus(); };
-function addItem() {
-  const title = $('add-input').value.trim();
-  if (!title) return;
-  state.items.push({ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), title, streak: true });
-  $('add-input').value = '';
-  save(); render(); $('add-input').focus();
-}
-$('add-btn').onclick = addItem;
-$('add-input').onkeydown = e => { if (e.key === 'Enter') addItem(); };
-
-// ---------- export / import ----------
-$('export').onclick = () => {
-  const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = `habits-${today()}.json`;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-};
-$('import').onclick = () => $('import-file').click();
-$('import-file').onchange = async e => {
-  const f = e.target.files[0]; if (!f) return;
-  try {
-    const s = JSON.parse(await f.text());
-    if (!Array.isArray(s.items) || typeof s.days !== 'object') throw new Error('bad file');
-    if (!confirm('Replace all current data with this file?')) return;
-    state = { notes: s.notes || '', items: s.items, days: s.days };
-    save(); render();
-  } catch { alert('Could not read that file.'); }
-  e.target.value = '';
-};
-
-// ---------- boot ----------
-render();
-document.addEventListener('visibilitychange', () => { if (!document.hidden) render(); });
-setInterval(() => { if (today() !== renderedDay) render(); }, 30000);
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
-</script>
+<!-- The Tally mark: four strokes crossed by the fifth. Shared by the header, favicon and app icon. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <linearGradient id="tally-bone" gradientUnits="userSpaceOnUse" x1="0" y1="330" x2="0" y2="694">
+      <stop offset="0" stop-color="#f7f1e4"/>
+      <stop offset="1" stop-color="#d4c9b2"/>
+    </linearGradient>
+    <linearGradient id="tally-amber" gradientUnits="userSpaceOnUse" x1="262" y1="668" x2="762" y2="356">
+      <stop offset="0" stop-color="#e8982a"/>
+      <stop offset="1" stop-color="#ffc85c"/>
+    </linearGradient>
+    <mask id="tally-cut" maskUnits="userSpaceOnUse" x="0" y="0" width="1024" height="1024">
+      <rect width="1024" height="1024" fill="#fff"/>
+      <path d="M262 668 762 356" stroke="#000" stroke-width="136" stroke-linecap="round"/>
+    </mask>
+  </defs>
+  <symbol id="tally" viewBox="0 0 1024 1024">
+    <g stroke="url(#tally-bone)" stroke-width="72" stroke-linecap="round" mask="url(#tally-cut)">
+      <path d="M350 330v364M458 330v364M566 330v364M674 330v364"/>
+    </g>
+    <path d="M262 668 762 356" stroke="url(#tally-amber)" stroke-width="72" stroke-linecap="round"/>
+  </symbol>
+</svg>
+<main id="app"></main>
+<script type="module" src="app.js"></script>
 </body>
 </html>
