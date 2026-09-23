@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <radialGradient id="bg" cx="32%" cy="16%" r="100%">
+      <stop offset="0" stop-color="#2d2a25"/>
+      <stop offset=".5" stop-color="#151412"/>
+      <stop offset="1" stop-color="#070706"/>
+    </radialGradient>
+    <linearGradient id="bone" gradientUnits="userSpaceOnUse" x1="0" y1="330" x2="0" y2="694">
+      <stop offset="0" stop-color="#f7f1e4"/>
+      <stop offset="1" stop-color="#d4c9b2"/>
+    </linearGradient>
+    <linearGradient id="amber" gradientUnits="userSpaceOnUse" x1="262" y1="668" x2="762" y2="356">
+      <stop offset="0" stop-color="#e8982a"/>
+      <stop offset="1" stop-color="#ffc85c"/>
+    </linearGradient>
+    <mask id="cut" maskUnits="userSpaceOnUse" x="0" y="0" width="1024" height="1024">
+      <rect width="1024" height="1024" fill="#fff"/>
+      <path d="M262 668 762 356" stroke="#000" stroke-width="136" stroke-linecap="round"/>
+    </mask>
+    <filter id="lift" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="18" stdDeviation="22" flood-color="#000" flood-opacity=".55"/>
+    </filter>
+  </defs>
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+  <g filter="url(#lift)">
+    <g stroke="url(#bone)" stroke-width="72" stroke-linecap="round" mask="url(#cut)">
+      <path d="M350 330v364M458 330v364M566 330v364M674 330v364"/>
+    </g>
+    <path d="M262 668 762 356" stroke="url(#amber)" stroke-width="72" stroke-linecap="round"/>
+  </g>
+</svg>
