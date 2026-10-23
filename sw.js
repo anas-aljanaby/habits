@@ -1,6 +1,6 @@
 // Offline shell: serve from cache first, refresh the cache in the background so
 // a new deploy shows up on the next launch.
-const CACHE = 'tally-v5';
+const CACHE = 'tally-v6';
 const SHELL = [
   './', './index.html', './app.js', './store.js', './manifest.webmanifest',
   './icon.svg', './icon-180.png', './icon-192.png', './icon-512.png',

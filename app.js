@@ -344,8 +344,8 @@ function home() {
       <button class="round-btn" data-action="notes" aria-label="Notes">${icon.notes}</button>
     </header>
     ${backupBanner()}
-    ${focusCard()}
     ${dayCard()}
+    ${focusCard()}
     ${checkIns()}
     ${habitList()}
     ${taskList()}`;
