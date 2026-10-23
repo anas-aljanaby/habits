@@ -449,13 +449,11 @@ function dayCard() {
           <button class="round-btn${weeksBack < 0 ? ' is-toward-now' : ''}" data-action="prev" aria-label="Previous week">${icon.left}</button>
           <button class="round-btn${weeksBack > 0 ? ' is-toward-now' : ''}" data-action="next" aria-label="Next week">${icon.right}</button>
         </div>
+        ${weeksBack ? `
+          <span class="week-off">${weeksBack === 1 ? 'Last week' : weeksBack > 1 ? `${weeksBack} weeks ago`
+            : weeksBack === -1 ? 'Next week' : `In ${-weeksBack} weeks`}</span>` : ''}
       </div>
-      ${weeksBack ? `
-        <p class="week-off">
-          <span>${weeksBack === 1 ? 'Last week' : weeksBack > 1 ? `${weeksBack} weeks ago`
-            : weeksBack === -1 ? 'Next week' : `In ${-weeksBack} weeks`}</span>
-          ${weekRange(start)}
-        </p>` : ''}
+      <p class="week-rule"><span>${weekRange(start)}</span></p>
       <div class="week${slide ? ` slide-${slide}` : ''}">
         <div class="streak${isComplete(t) ? ' is-lit' : ''}">
           <span class="streak-num">${n}</span>

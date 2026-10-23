@@ -156,14 +156,15 @@
   /* ---------- day card: header + streak + week, one navigation unit ---------- */
 
   .daycard { margin-bottom: 12px; padding: 20px 16px 12px 18px; }
-  .daycard-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+  .daycard-head { position: relative; display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
   .dayname { font: 600 32px/1.05 var(--serif); letter-spacing: -0.01em; }
   .dateline {
     display: flex;
     align-items: center;
     gap: 10px;
-    min-height: 32px;
-    margin-top: 4px;
+    min-height: 26px;
+    margin-top: 10px;
+    white-space: nowrap; /* may run under the arrows; keeps the card one height */
     font-size: 16px;
     color: var(--text-2);
   }
@@ -179,19 +180,36 @@
   .today-btn { box-shadow: inset 0 0 0 1px rgba(244, 181, 69, 0.45); }
   .today-btn::after { content: ""; position: absolute; inset: -8px -4px; }
   .today-btn:active { background: rgba(244, 181, 69, 0.25); }
-  .stepper { display: flex; gap: 8px; margin-top: 2px; }
+  .stepper { display: flex; gap: 8px; }
   /* Off the current week, the forward arrow lights up as the way back to now. */
   .round-btn.is-toward-now { color: var(--amber); box-shadow: inset 0 0 0 1.5px rgba(244, 181, 69, 0.4), 0 1px 2px rgba(0, 0, 0, 0.6); }
 
+  /* Off the current week, a quiet tag sits under the arrows, level with the date line,
+     so the card keeps the same height on every week. */
   .week-off {
-    margin-top: 14px;
-    padding-top: 11px;
-    border-top: 1px solid var(--line);
-    font-size: 13px;
+    position: absolute;
+    right: 0;
+    bottom: 2px;
+    padding: 3px 8px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+    color: var(--amber);
+    background: var(--amber-soft);
+  }
+  /* The week's dates sit on the divider between the header and the strip. */
+  .week-rule {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: 17px;
+    margin-top: 8px;
+    font-size: 12px;
     color: var(--text-3);
   }
-  .week-off span { margin-right: 6px; font-weight: 600; color: var(--text-2); }
-  .week-off + .week { margin-top: 6px; padding-top: 0; border-top: 0; }
+  .week-rule::before { content: ""; flex: 1; border-top: 1px solid var(--line); }
+  .week-rule + .week { margin-top: 4px; padding-top: 0; border-top: 0; }
 
   /* A week change slides the strip in from the side it came from. */
   .slide-back, .slide-forward { overflow: hidden; }
