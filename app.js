@@ -8,10 +8,13 @@ const state = {
   days: {},
   plan: '',
   notes: [],
+  tasks: [],
   view: todayKey(),     // the day shown on the home screen
   editingItems: false,
   editingPlan: false,
   popped: null,         // id just ticked, so its box gets the check feedback once
+  poppedTask: null,
+  taskDraft: '',        // the half-typed new task survives re-renders
   connecting: false,
   backupError: '',
 };
@@ -26,6 +29,15 @@ function parse(k) { const [y, m, d] = k.split('-').map(Number); return new Date(
 function addDays(k, n) { const d = parse(k); d.setDate(d.getDate() + n); return keyOf(d); }
 const weekday = d => d.toLocaleDateString('en-GB', { weekday: 'long' });
 const dayMonth = d => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long' });
+const fullDate = k => parse(k).toLocaleDateString('en-GB', {
+  day: 'numeric', month: 'long', ...(k.slice(0, 4) !== todayKey().slice(0, 4) && { year: 'numeric' }),
+});
+function relDay(k) {
+  const t = todayKey();
+  return k === t ? 'Today' : k === addDays(t, -1) ? 'Yesterday' : weekday(parse(k));
+}
+// Weeks run Saturday to Friday.
+const weekStart = k => addDays(k, -((parse(k).getDay() + 1) % 7));
 
 // ---------- habit + streak rules ----------
 
@@ -117,6 +129,50 @@ function goTo(k) {
   render();
 }
 
+// ---------- daily tasks: one-off to-dos for a date, apart from habits and the streak ----------
+
+const tasksOn = k => state.tasks.filter(t => t.date === k).sort((a, b) => a.position - b.position);
+const findTask = id => state.tasks.find(t => t.id === id);
+const nextPosition = k => Math.max(-1, ...tasksOn(k).map(t => t.position)) + 1;
+
+function addTask(title) {
+  title = title.trim();
+  if (!title) return;
+  const task = { id: crypto.randomUUID(), date: state.view, title, done: false, position: nextPosition(state.view) };
+  state.tasks.push(task);
+  store.saveTasks([task]);
+}
+
+function toggleTask(id) {
+  const task = findTask(id);
+  task.done = !task.done;
+  state.poppedTask = task.done ? id : null;
+  store.saveTasks([task]);
+  render();
+}
+
+function removeTask(id) {
+  state.tasks = state.tasks.filter(t => t.id !== id);
+  store.deleteTask(id);
+  render();
+}
+
+// What was left open on the last day before today that had tasks; offered on today.
+function leftovers() {
+  const t = todayKey();
+  const last = state.tasks.reduce((m, task) => (task.date < t && task.date > m ? task.date : m), '');
+  return { date: last, tasks: tasksOn(last).filter(task => !task.done) };
+}
+
+function carryOver() {
+  const t = todayKey();
+  const moved = leftovers().tasks;
+  let position = nextPosition(t);
+  for (const task of moved) Object.assign(task, { date: t, position: position++ });
+  store.saveTasks(moved);
+  render();
+}
+
 // Text saves are debounced; flushed when the app is backgrounded.
 const pending = new Map();
 function later(key, fn) {
@@ -168,6 +224,7 @@ const icon = {
   check: svg('<path d="M6 12.5l4 4 8-9"/>', 3),
   notes: svg('<path d="M6.5 3.5h8L18.5 7.5v13h-12z"/><path d="M14 3.5v4.5h4.5"/><path d="M9.5 12.5h5.5M9.5 16h3.5"/>', 1.8),
   plus: svg('<path d="M12 5.5v13M5.5 12h13"/>'),
+  x: svg('<path d="M7.5 7.5l9 9M16.5 7.5l-9 9"/>', 1.8),
   trash: svg('<path d="M4.5 7h15M9.5 3.8h5M6.8 7l.9 12.2c.1.8.7 1.3 1.5 1.3h5.6c.8 0 1.4-.5 1.5-1.3L17.2 7"/>', 1.8),
   grip: svg('<path d="M6 9h12M6 12h12M6 15h12"/>', 1.8),
 };
@@ -184,6 +241,7 @@ function home() {
     ${backupBanner()}
     ${dayCard()}
     ${state.editingItems ? habitEditor() : habitList()}
+    ${taskList()}
     ${planBlock()}`;
 }
 
@@ -191,7 +249,7 @@ function dayCard() {
   const t = todayKey();
   const v = state.view;
   const d = parse(v);
-  const start = addDays(v, -d.getDay());
+  const start = weekStart(v);
   const week = Array.from({ length: 7 }, (_, i) => addDays(start, i));
   const n = streak();
   return `
@@ -207,8 +265,8 @@ function dayCard() {
           </div>
         </div>
         <div class="stepper">
-          <button class="round-btn" data-action="prev" aria-label="Previous day">${icon.left}</button>
-          <button class="round-btn" data-action="next" aria-label="Next day" ${v === t ? 'disabled' : ''}>${icon.right}</button>
+          <button class="round-btn" data-action="prev" aria-label="Previous week">${icon.left}</button>
+          <button class="round-btn" data-action="next" aria-label="Next week" ${start === weekStart(t) ? 'disabled' : ''}>${icon.right}</button>
         </div>
       </div>
       <div class="week">
@@ -321,9 +379,88 @@ function habitEditor() {
     </section>`;
 }
 
+function taskBox(task, popped) {
+  return `
+    <button class="task-box" data-action="toggle-task" data-id="${task.id}" aria-pressed="${task.done}"
+      aria-label="${esc(task.title)}">
+      <span class="tick${popped === task.id ? ' pop' : ''}">${icon.check}</span>
+    </button>`;
+}
+
+function taskList() {
+  const k = state.view;
+  const tasks = tasksOn(k);
+  const done = tasks.filter(t => t.done).length;
+  const carry = k === todayKey() ? leftovers() : null;
+  const popped = state.poppedTask;
+  state.poppedTask = null;
+  return `
+    <section class="tasks">
+      <div class="section-head">
+        <h2>Tasks</h2>
+        ${tasks.length ? `<span class="count">${done} of ${tasks.length}</span>` : ''}
+        <button class="pill" data-action="tasks">History</button>
+      </div>
+      <ul class="rows surface tasklist">
+        ${tasks.map(task => `
+          <li class="task${task.done ? ' is-done' : ''}">
+            ${taskBox(task, popped)}
+            <input class="task-input" data-task="${task.id}" value="${esc(task.title)}" maxlength="200"
+              enterkeyhint="done" autocomplete="off" aria-label="Task">
+            <button class="icon-btn" data-action="delete-task" data-id="${task.id}" aria-label="Delete ${esc(task.title)}">${icon.x}</button>
+          </li>`).join('')}
+        <li>
+          <form class="task-add" data-form="task">
+            <span class="task-plus">${icon.plus}</span>
+            <input name="title" value="${esc(state.taskDraft)}" placeholder="${k === todayKey() ? 'What needs doing today?' : 'Add a task'}"
+              maxlength="200" enterkeyhint="done" autocomplete="off" aria-label="New task">
+          </form>
+        </li>
+      </ul>
+      ${carry?.tasks.length ? `
+        <button class="carry" data-action="carry">
+          Move ${carry.tasks.length} unfinished from ${carry.date === addDays(k, -1) ? 'yesterday'
+            : carry.date > addDays(k, -7) ? weekday(parse(carry.date)) : fullDate(carry.date)} to today
+        </button>` : ''}
+    </section>`;
+}
+
+function taskHistory() {
+  const dates = [...new Set(state.tasks.map(t => t.date))].sort().reverse();
+  const popped = state.poppedTask;
+  state.poppedTask = null;
+  return `
+    <header class="top">
+      <button class="back-btn" data-action="home">${icon.left}<span>Today</span></button>
+    </header>
+    <h1 class="page-title">Tasks</h1>
+    ${dates.length ? dates.map(k => {
+      const tasks = tasksOn(k);
+      return `
+        <section class="task-day">
+          <button class="task-day-head" data-action="open-day" data-date="${k}">
+            <span class="task-day-name">${relDay(k)}</span>
+            <span class="task-day-date">${fullDate(k)}</span>
+            <span class="count">${tasks.filter(t => t.done).length} of ${tasks.length}</span>
+          </button>
+          <ul class="rows surface tasklist">
+            ${tasks.map(task => `
+              <li class="task${task.done ? ' is-done' : ''}">
+                ${taskBox(task, popped)}
+                <span class="task-title">${esc(task.title)}</span>
+              </li>`).join('')}
+          </ul>
+        </section>`;
+    }).join('') : `
+      <div class="empty surface">
+        <p class="empty-title">No tasks yet</p>
+        <p>Tasks you add on a day show up here, newest day first.</p>
+      </div>`}`;
+}
+
 function planBlock() {
   const body = state.editingPlan
-    ? `<textarea class="plan-input" data-plan aria-label="Plan" placeholder="# This week&#10;- Monday: …">${esc(state.plan)}</textarea>`
+    ? `<textarea class="plan-input" data-plan aria-label="Plan" placeholder="# This week&#10;- Saturday: …">${esc(state.plan)}</textarea>`
     : state.plan.trim()
       ? `<div class="md">${markdown(state.plan)}</div>`
       : `<p class="placeholder">Tap to write the plan for the next week or two. Use # for headings, - for bullets, **bold** for emphasis.</p>`;
@@ -458,8 +595,8 @@ function render() {
   }
   openNoteId = note?.id ?? null;
 
-  const screen = note ? 'note' : route === 'notes' || route === 'backup' ? route : 'home';
-  $app.innerHTML = { note: () => noteEditor(note), notes: notesList, backup: backupScreen, home }[screen]();
+  const screen = note ? 'note' : ['notes', 'backup', 'tasks'].includes(route) ? route : 'home';
+  $app.innerHTML = { note: () => noteEditor(note), notes: notesList, backup: backupScreen, tasks: taskHistory, home }[screen]();
   document.body.dataset.screen = screen;
 
   const area = $app.querySelector('textarea');
@@ -479,8 +616,8 @@ function autosize(el) {
 const actions = {
   toggle: el => toggle(el.dataset.id),
   day: el => goTo(el.dataset.date),
-  prev: () => goTo(addDays(state.view, -1)),
-  next: () => goTo(addDays(state.view, 1)),
+  prev: () => goTo(addDays(state.view, -7)),
+  next: () => goTo(addDays(state.view, 7)),
   today: () => goTo(todayKey()),
   'edit-items': () => { state.editingItems = true; render(); },
   'done-items': () => { state.editingItems = false; flush(); render(); },
@@ -491,6 +628,11 @@ const actions = {
     item.deletedOn = todayKey();
     saveItems([item]);
   },
+  'toggle-task': el => toggleTask(el.dataset.id),
+  'delete-task': el => removeTask(el.dataset.id),
+  carry: carryOver,
+  tasks: () => { location.hash = 'tasks'; },
+  'open-day': el => { goTo(el.dataset.date); location.hash = ''; },
   'edit-plan': () => { if (!state.editingPlan) { state.editingPlan = true; render(); } },
   'done-plan': () => { state.editingPlan = false; flush(); render(); },
   home: () => { location.hash = ''; },
@@ -534,21 +676,34 @@ $app.addEventListener('input', e => {
     const item = findItem(el.dataset.id);
     item.title = el.value.trim();
     later(item.id, () => store.saveItems([item]));
+  } else if (el.matches('[data-task]') && el.value.trim()) {
+    const task = findTask(el.dataset.task);
+    task.title = el.value.trim();
+    later(task.id, () => store.saveTasks([task]));
+  } else if (el.matches('[data-form="task"] input')) {
+    state.taskDraft = el.value;
   }
 });
 
-// A rename cleared to nothing snaps back to the saved title.
+// A rename cleared to nothing snaps back to the saved title; a task cleared to nothing is deleted.
 $app.addEventListener('change', e => {
   if (e.target.matches('.title-input') && !e.target.value.trim()) e.target.value = findItem(e.target.dataset.id).title;
+  if (e.target.matches('[data-task]') && !e.target.value.trim()) removeTask(e.target.dataset.task);
 });
 
 $app.addEventListener('keydown', e => {
-  if (e.key === 'Enter' && e.target.matches('.title-input')) e.target.blur();
+  if (e.key === 'Enter' && e.target.matches('.title-input, [data-task]')) e.target.blur();
 });
 
 $app.addEventListener('submit', e => {
   e.preventDefault();
   if (e.target.dataset.form === 'backup') return connect(e.target.elements.token.value);
+  if (e.target.dataset.form === 'task') {
+    addTask(e.target.elements.title.value);
+    state.taskDraft = '';
+    render();
+    return $app.querySelector('[data-form="task"] input').focus(); // keep the keyboard up for the next one
+  }
   const input = e.target.elements.title;
   addItem(input.value);
   $app.querySelector('[data-form="add"] input')?.focus();
@@ -626,6 +781,7 @@ function apply(data) {
   state.days = data.days;
   state.plan = data.plan.text;
   state.notes = data.notes;
+  state.tasks = data.tasks;
 }
 
 apply(await store.load());

@@ -5,6 +5,7 @@
 //   days   { date, required: [itemId], done: [itemId] }
 //   plan   { text, updatedAt }                  (single row)
 //   notes  { id, body, updatedAt }
+//   tasks  { id, date, title, done, position }   one-off to-dos for a day, apart from habits
 //
 // Dates are local 'YYYY-MM-DD' strings.
 //
@@ -25,9 +26,14 @@ let sync = readSync();
 function read() {
   try {
     const data = JSON.parse(localStorage.getItem(KEY));
-    if (data && Array.isArray(data.items)) return data;
+    if (data && Array.isArray(data.items)) return withDefaults(data);
   } catch {}
-  return migrateLegacy() || { items: [], days: {}, plan: { text: '', updatedAt: null }, notes: [] };
+  return withDefaults(migrateLegacy() || { items: [], days: {}, plan: { text: '', updatedAt: null }, notes: [] });
+}
+
+// Fills in record types added after a copy was saved, locally or in the backup.
+function withDefaults(data) {
+  return { tasks: [], ...data };
 }
 
 // One-time import of the earlier version's data so the streak and history carry over.
@@ -113,7 +119,7 @@ async function pull(signal) {
     setSync({ sha: file.sha });
     return push();
   }
-  db = JSON.parse(fromBase64(file.content));
+  db = withDefaults(JSON.parse(fromBase64(file.content)));
   localStorage.setItem(KEY, JSON.stringify(db));
   setSync({ sha: file.sha, dirty: false });
   setStatus('ok');
@@ -217,5 +223,15 @@ export async function saveNote(note) {
 
 export async function deleteNote(id) {
   db.notes = db.notes.filter(n => n.id !== id);
+  write();
+}
+
+export async function saveTasks(tasks) {
+  for (const task of tasks) upsert(db.tasks, structuredClone(task));
+  write();
+}
+
+export async function deleteTask(id) {
+  db.tasks = db.tasks.filter(t => t.id !== id);
   write();
 }

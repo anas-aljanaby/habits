@@ -375,6 +375,73 @@
   .add-row .pill { min-height: 40px; }
   ::placeholder { color: var(--text-3); }
 
+  /* ---------- tasks: one-off to-dos for the day, lighter than habits ---------- */
+
+  .tasklist > li + li::before { left: 52px; }
+  .task { display: flex; align-items: center; min-height: 52px; padding: 0 4px 0 6px; }
+  .task-box { flex: none; display: grid; place-items: center; width: 44px; height: 44px; }
+  .tick {
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    color: var(--bone-ink);
+    box-shadow: inset 0 0 0 1.5px rgba(255, 250, 235, 0.28);
+  }
+  .tick svg { width: 15px; height: 15px; opacity: 0; }
+  .task.is-done .tick { background: var(--text-2); box-shadow: none; }
+  .task.is-done .tick svg { opacity: 1; }
+  .tick.pop { animation: pop 0.18s ease-out; }
+  @media (prefers-reduced-motion: reduce) { .tick.pop { animation: none; } }
+  .task-input, .task-title, .task-add input {
+    flex: 1;
+    min-width: 0;
+    padding: 0 6px;
+    border: 0;
+    background: transparent;
+    font-size: 16px;
+    outline: none;
+  }
+  .task-input, .task-add input { height: 44px; }
+  .task-title { padding: 14px 12px 14px 6px; line-height: 1.35; }
+  .task.is-done .task-input, .task.is-done .task-title {
+    color: var(--text-3);
+    text-decoration: line-through;
+    text-decoration-color: rgba(255, 250, 235, 0.25);
+  }
+  .task .icon-btn { color: var(--text-3); opacity: 0.7; }
+  .task .icon-btn svg { width: 18px; height: 18px; }
+  .task-add { display: flex; align-items: center; min-height: 52px; padding: 0 12px 0 6px; }
+  .task-plus { flex: none; display: grid; place-items: center; width: 44px; height: 44px; color: var(--amber); }
+  .task-plus svg { width: 20px; height: 20px; }
+  .carry {
+    position: relative;
+    margin: 12px 6px 0;
+    font-size: 15px;
+    font-weight: 600;
+    text-align: left;
+    color: var(--amber);
+  }
+  .carry::after { content: ""; position: absolute; inset: -12px -6px; }
+  .carry:active { opacity: 0.7; }
+
+  .task-day + .task-day { margin-top: 22px; }
+  .task-day-head {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    width: 100%;
+    min-height: 44px;
+    margin-bottom: 4px;
+    padding: 0 4px;
+    text-align: left;
+  }
+  .task-day-name { font: 600 20px/1.2 var(--serif); }
+  .task-day-date { font-size: 15px; color: var(--text-2); }
+  .task-day-head .count { margin-left: auto; font-size: 15px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+  .task-day-head:active .task-day-name { color: var(--amber); }
+
   /* ---------- plan ---------- */
 
   .plan-body { padding: 18px 20px 20px; min-height: 96px; cursor: text; }
