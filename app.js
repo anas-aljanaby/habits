@@ -9,11 +9,14 @@ const state = {
   plan: '',
   notes: [],
   tasks: [],
+  dayNotes: {},
+  goals: [],
+  checkpoints: [],
   view: todayKey(),     // the day shown on the home screen
-  editingItems: false,
   editingPlan: false,
   popped: null,         // id just ticked, so its box gets the check feedback once
   poppedTask: null,
+  poppedCheck: null,
   taskDraft: '',        // the half-typed new task survives re-renders
   connecting: false,
   backupError: '',
@@ -38,6 +41,21 @@ function relDay(k) {
 }
 // Weeks run Saturday to Friday.
 const weekStart = k => addDays(k, -((parse(k).getDay() + 1) % 7));
+const daysBetween = (a, b) => Math.round((parse(b) - parse(a)) / 864e5);
+const shortDate = k => parse(k).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+function untilLabel(k) {
+  const n = daysBetween(todayKey(), k);
+  return n === 0 ? 'today' : n === 1 ? 'tomorrow' : n === -1 ? 'yesterday' : n > 0 ? `in ${n} days` : `${-n} days ago`;
+}
+function countdown(n) {
+  return n === 0 ? 'Due today' : n > 0 ? `${n} ${n === 1 ? 'day' : 'days'} left` : `${-n} ${n === -1 ? 'day' : 'days'} past`;
+}
+
+// ---------- text direction: each piece of user text runs the way its first strong letter does ----------
+
+const STRONG = /[A-Za-z\u00C0-\u024F\u0370-\u04FF\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF]/;
+const RTL = /[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF]/;
+const dirOf = s => (RTL.test(s.match(STRONG)?.[0] ?? '') ? 'rtl' : 'ltr');
 
 // ---------- habit + streak rules ----------
 
@@ -125,7 +143,6 @@ function reorder(ids) {
 function goTo(k) {
   const t = todayKey();
   state.view = k > t ? t : k;
-  state.editingItems = false;
   render();
 }
 
@@ -173,6 +190,81 @@ function carryOver() {
   render();
 }
 
+// ---------- goals: a deadline with dated check-ins along the way ----------
+
+const activeGoals = () => state.goals.filter(g => !g.archivedOn).sort((a, b) => a.deadline.localeCompare(b.deadline));
+const pastGoals = () => state.goals.filter(g => g.archivedOn).sort((a, b) => b.archivedOn.localeCompare(a.archivedOn));
+const findGoal = id => state.goals.find(g => g.id === id);
+const findCheckpoint = id => state.checkpoints.find(c => c.id === id);
+const checkpointsOf = id => state.checkpoints.filter(c => c.goalId === id).sort((a, b) => a.date.localeCompare(b.date));
+const goalTitle = goal => goal?.title || 'Untitled goal';
+
+// Check-ins shown on a day: those dated that day, and on today any an active goal left unticked.
+function checkInsOn(k) {
+  const t = todayKey();
+  const active = new Set(activeGoals().map(g => g.id));
+  return state.checkpoints
+    .filter(c => (c.date === k && (active.has(c.goalId) || c.doneOn)) || (k === t && c.date < t && !c.doneOn && active.has(c.goalId)))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+// Saved on its first edit; one left without a name or check-ins is dropped (see render).
+function newGoal() {
+  const t = todayKey();
+  const goal = { id: crypto.randomUUID(), title: '', deadline: addDays(t, 30), createdOn: t, archivedOn: null, outcome: null };
+  state.goals.push(goal);
+  location.hash = `goal/${goal.id}`;
+}
+
+function addCheckpoint(goalId) {
+  const goal = findGoal(goalId);
+  const t = todayKey();
+  const week = addDays(t, 7);
+  const cp = {
+    id: crypto.randomUUID(), goalId, date: goal.deadline < week ? (goal.deadline < t ? t : goal.deadline) : week,
+    title: '', notes: '', doneOn: null,
+  };
+  state.checkpoints.push(cp);
+  store.saveGoals([goal]);
+  store.saveCheckpoints([cp]);
+  render();
+  $app.querySelector(`[data-cp="${cp.id}"][data-field="title"]`)?.focus();
+}
+
+function toggleCheckIn(id) {
+  const cp = findCheckpoint(id);
+  cp.doneOn = cp.doneOn ? null : todayKey();
+  state.poppedCheck = cp.doneOn ? id : null;
+  store.saveCheckpoints([cp]);
+  render();
+}
+
+function archiveGoal(id, outcome) {
+  const goal = findGoal(id);
+  Object.assign(goal, { archivedOn: outcome && todayKey(), outcome });
+  store.saveGoals([goal]);
+  location.hash = 'plan';
+}
+
+function removeCheckpoint(id) {
+  state.checkpoints = state.checkpoints.filter(c => c.id !== id);
+  store.deleteCheckpoint(id);
+}
+
+function removeGoal(id) {
+  state.goals = state.goals.filter(g => g.id !== id);
+  state.checkpoints = state.checkpoints.filter(c => c.goalId !== id);
+  store.deleteGoal(id);
+}
+
+// Leaving a goal's page drops blank check-ins, and the goal itself if nothing was written.
+function tidyGoal(id) {
+  const goal = findGoal(id);
+  if (!goal) return;
+  for (const c of checkpointsOf(id)) if (!c.title.trim() && !c.notes.trim()) removeCheckpoint(c.id);
+  if (!goal.title.trim() && !checkpointsOf(id).length) removeGoal(id);
+}
+
 // Text saves are debounced; flushed when the app is backgrounded.
 const pending = new Map();
 function later(key, fn) {
@@ -183,7 +275,7 @@ function flush() {
   for (const [key, { fn, timer }] of pending) { clearTimeout(timer); pending.delete(key); fn(); }
 }
 
-// ---------- markdown: headings, bullets (one level of nesting), bold ----------
+// ---------- markdown: headings, bullets (one level of nesting), bold; each line sets its own direction ----------
 
 function esc(s) {
   return s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -198,16 +290,16 @@ function markdown(src) {
     let m;
     if ((m = line.match(/^(#{1,3})\s+(.*)$/))) {
       closeList();
-      out.push(`<h${m[1].length + 2}>${inline(m[2])}</h${m[1].length + 2}>`);
+      out.push(`<h${m[1].length + 2} dir="auto">${inline(m[2])}</h${m[1].length + 2}>`);
     } else if ((m = line.match(/^(\s*)[-*]\s+(.*)$/))) {
       if (!inList) { out.push('<ul>'); inList = true; }
-      out.push(`<li${m[1].length >= 2 ? ' class="sub"' : ''}>${inline(m[2])}</li>`);
+      out.push(`<li dir="auto"${m[1].length >= 2 ? ' class="sub"' : ''}>${inline(m[2])}</li>`);
     } else if (!line.trim()) {
       closeList();
       out.push('<div class="gap"></div>');
     } else {
       closeList();
-      out.push(`<p>${inline(line)}</p>`);
+      out.push(`<p dir="auto">${inline(line)}</p>`);
     }
   }
   closeList();
@@ -239,10 +331,83 @@ function home() {
       <button class="round-btn" data-action="notes" aria-label="Notes">${icon.notes}</button>
     </header>
     ${backupBanner()}
+    ${focusCard()}
     ${dayCard()}
-    ${state.editingItems ? habitEditor() : habitList()}
-    ${taskList()}
-    ${planBlock()}`;
+    ${checkIns()}
+    ${habitList()}
+    ${taskList()}`;
+}
+
+// The nearest active goal: its countdown and what's next. Opens the plan.
+function focusCard() {
+  const goals = activeGoals();
+  if (!goals.length) {
+    return `
+      <button class="focus surface is-empty" data-action="new-goal">
+        <span class="focus-head"><span class="kicker">Focus</span></span>
+        <span class="focus-empty">Set a goal with a deadline, and check-ins to see if you’re on track.</span>
+        <span class="focus-add">${icon.plus}</span>
+      </button>`;
+  }
+  const goal = goals[0];
+  const left = daysBetween(todayKey(), goal.deadline);
+  const next = checkpointsOf(goal.id).find(c => !c.doneOn);
+  return `
+    <button class="focus surface" data-action="plan" aria-label="Open plan">
+      <span class="focus-head">
+        <span class="kicker">Focus${goals.length > 1 ? ` · ${goals.length} goals` : ''}</span>
+        <span class="focus-due">by ${shortDate(goal.deadline)}</span>
+      </span>
+      <span class="focus-title" dir="auto">${esc(goalTitle(goal))}</span>
+      <span class="focus-count">
+        <span class="focus-num${left < 0 ? ' is-over' : ''}">${Math.abs(left)}</span>
+        <span class="focus-unit">${left === 0 ? 'due today' : `${Math.abs(left) === 1 ? 'day' : 'days'} ${left < 0 ? 'past' : 'left'}`}</span>
+        ${track(goal)}
+      </span>
+      ${next ? `
+        <span class="focus-next${next.date <= todayKey() ? ' is-due' : ''}">
+          <span class="focus-next-when">${next.date === todayKey() ? 'Check-in today' : next.date < todayKey()
+            ? `Check-in was due ${shortDate(next.date)}` : `Next check-in · ${shortDate(next.date)} · ${untilLabel(next.date)}`}</span>
+          <span class="focus-next-title" dir="auto">${esc(next.title || 'Check-in')}</span>
+        </span>` : ''}
+    </button>`;
+}
+
+// Time from the goal's start to its deadline, filled up to today, with its check-ins as dots.
+function track(goal) {
+  const span = Math.max(1, daysBetween(goal.createdOn, goal.deadline));
+  const at = k => Math.max(0, Math.min(100, (daysBetween(goal.createdOn, k) / span) * 100));
+  return `
+    <span class="track" aria-hidden="true">
+      <span class="track-fill" style="width:${at(todayKey())}%"></span>
+      ${checkpointsOf(goal.id).map(c => `<span class="track-dot${c.doneOn ? ' is-done' : ''}" style="left:${at(c.date)}%"></span>`).join('')}
+    </span>`;
+}
+
+function checkIns() {
+  const list = checkInsOn(state.view);
+  if (!list.length) return '';
+  const popped = state.poppedCheck;
+  state.poppedCheck = null;
+  return `
+    <section class="checkins">
+      <div class="section-head"><h2>Check-in</h2></div>
+      <ul class="rows surface checkin-list">
+        ${list.map(c => `
+          <li class="checkin${c.doneOn ? ' is-done' : ''}" dir="${dirOf(c.title)}">
+            <button class="checkin-box" data-action="toggle-check" data-id="${c.id}" aria-pressed="${!!c.doneOn}"
+              aria-label="${esc(c.title || 'Check-in')}">
+              <span class="box${popped === c.id ? ' pop' : ''}">${icon.check}</span>
+            </button>
+            <div class="checkin-body">
+              <span class="checkin-goal" dir="auto">${esc(goalTitle(findGoal(c.goalId)))}</span>
+              <span class="checkin-title" dir="auto">${esc(c.title || 'Check-in')}</span>
+              ${c.date !== state.view ? `<span class="tag">Due ${shortDate(c.date)}</span>` : ''}
+              ${c.notes.trim() ? `<div class="md checkin-notes">${markdown(c.notes)}</div>` : ''}
+            </div>
+          </li>`).join('')}
+      </ul>
+    </section>`;
 }
 
 function dayCard() {
@@ -321,7 +486,7 @@ function habitList() {
           ${isToday
             ? `<p class="empty-title">Your checklist is empty</p>
                <p>Add the things you want to do every day.</p>
-               <button class="pill is-primary" data-action="edit-items">Add habits</button>`
+               <button class="pill is-primary" data-action="habits">Add habits</button>`
             : '<p>Nothing was on the checklist this day.</p>'}
         </div>
       </section>`;
@@ -334,49 +499,46 @@ function habitList() {
       <div class="section-head">
         <h2>Habits</h2>
         ${required.length ? `<span class="count">${count} of ${required.length}</span>` : ''}
-        ${isToday ? '<button class="pill" data-action="edit-items">Edit</button>' : ''}
+        <button class="pill" data-action="habits">Edit</button>
       </div>
-      <ul class="rows surface">
+      <ul class="habit-strip surface" dir="${dirOf(items[0].title)}">
         ${items.map(item => `
           <li>
-            <button class="row${done.has(item.id) ? ' is-done' : ''}" data-action="toggle" data-id="${item.id}"
-              aria-pressed="${done.has(item.id)}">
+            <button class="habit${done.has(item.id) ? ' is-done' : ''}" data-action="toggle" data-id="${item.id}"
+              aria-pressed="${done.has(item.id)}" dir="${dirOf(item.title)}">
               <span class="box${item.counts ? '' : ' is-round'}${popped === item.id ? ' pop' : ''}">${icon.check}</span>
-              <span class="row-title">${esc(item.title)}</span>
+              <span class="habit-title">${esc(item.title)}</span>
             </button>
           </li>`).join('')}
       </ul>
-      ${items.some(i => !i.counts) ? '<p class="legend">Round items are extras and don’t affect the streak.</p>' : ''}
     </section>`;
 }
 
-function habitEditor() {
+function habitsPage() {
   return `
-    <section class="habits">
-      <div class="section-head">
-        <h2>Edit habits</h2>
-        <button class="pill is-primary" data-action="done-items">Done</button>
-      </div>
-      <p class="legend">Square habits count toward the streak, round ones don’t. Tap a shape to switch it, drag the handle to reorder.</p>
-      ${liveItems().length ? `
-        <ul class="rows surface is-editing">
-          ${liveItems().map(item => `
-            <li class="edit-row" data-id="${item.id}">
-              <span class="grip" data-grip aria-label="Reorder">${icon.grip}</span>
-              <button class="shape-btn" data-action="flip" data-id="${item.id}"
-                aria-label="${item.counts ? 'Counts toward streak' : 'Extra, not counted'}">
-                <span class="box${item.counts ? '' : ' is-round'}"></span>
-              </button>
-              <input class="title-input" data-id="${item.id}" value="${esc(item.title)}" maxlength="80"
-                enterkeyhint="done" autocomplete="off" aria-label="Habit name">
-              <button class="icon-btn danger" data-action="delete" data-id="${item.id}" aria-label="Delete ${esc(item.title)}">${icon.trash}</button>
-            </li>`).join('')}
-        </ul>` : ''}
-      <form class="add-row surface" data-form="add">
-        <input name="title" placeholder="New habit" maxlength="80" enterkeyhint="done" autocomplete="off" aria-label="New habit">
-        <button class="pill is-primary" type="submit">Add</button>
-      </form>
-    </section>`;
+    <header class="top">
+      <button class="back-btn" data-action="home">${icon.left}<span>Today</span></button>
+    </header>
+    <h1 class="page-title">Habits</h1>
+    <p class="legend page-legend">Square habits count toward the streak, round ones are extras that don’t. Tap a shape to switch it, drag the handle to reorder.</p>
+    ${liveItems().length ? `
+      <ul class="rows surface is-editing">
+        ${liveItems().map(item => `
+          <li class="edit-row" data-id="${item.id}" dir="${dirOf(item.title)}">
+            <span class="grip" data-grip aria-label="Reorder">${icon.grip}</span>
+            <button class="shape-btn" data-action="flip" data-id="${item.id}"
+              aria-label="${item.counts ? 'Counts toward streak' : 'Extra, not counted'}">
+              <span class="box${item.counts ? '' : ' is-round'}"></span>
+            </button>
+            <input class="title-input" data-id="${item.id}" value="${esc(item.title)}" maxlength="80" dir="auto"
+              enterkeyhint="done" autocomplete="off" aria-label="Habit name">
+            <button class="icon-btn danger" data-action="delete" data-id="${item.id}" aria-label="Delete ${esc(item.title)}">${icon.trash}</button>
+          </li>`).join('')}
+      </ul>` : ''}
+    <form class="add-row surface" data-form="add">
+      <input name="title" placeholder="New habit" maxlength="80" dir="auto" enterkeyhint="done" autocomplete="off" aria-label="New habit">
+      <button class="pill is-primary" type="submit">Add</button>
+    </form>`;
 }
 
 function taskBox(task, popped) {
@@ -403,9 +565,9 @@ function taskList() {
       </div>
       <ul class="rows surface tasklist">
         ${tasks.map(task => `
-          <li class="task${task.done ? ' is-done' : ''}">
+          <li class="task${task.done ? ' is-done' : ''}" dir="${dirOf(task.title)}">
             ${taskBox(task, popped)}
-            <input class="task-input" data-task="${task.id}" value="${esc(task.title)}" maxlength="200"
+            <input class="task-input" data-task="${task.id}" value="${esc(task.title)}" maxlength="200" dir="auto"
               enterkeyhint="done" autocomplete="off" aria-label="Task">
             <button class="icon-btn" data-action="delete-task" data-id="${task.id}" aria-label="Delete ${esc(task.title)}">${icon.x}</button>
           </li>`).join('')}
@@ -413,7 +575,7 @@ function taskList() {
           <form class="task-add" data-form="task">
             <span class="task-plus">${icon.plus}</span>
             <input name="title" value="${esc(state.taskDraft)}" placeholder="${k === todayKey() ? 'What needs doing today?' : 'Add a task'}"
-              maxlength="200" enterkeyhint="done" autocomplete="off" aria-label="New task">
+              maxlength="200" dir="auto" enterkeyhint="done" autocomplete="off" aria-label="New task">
           </form>
         </li>
       </ul>
@@ -422,58 +584,173 @@ function taskList() {
           Move ${carry.tasks.length} unfinished from ${carry.date === addDays(k, -1) ? 'yesterday'
             : carry.date > addDays(k, -7) ? weekday(parse(carry.date)) : fullDate(carry.date)} to today
         </button>` : ''}
+      <div class="daynote surface">
+        <textarea data-daynote="${k}" dir="auto" rows="1" aria-label="Note for the day"
+          placeholder="Note for the day">${esc(state.dayNotes[k]?.body ?? '')}</textarea>
+      </div>
     </section>`;
 }
 
 function taskHistory() {
-  const dates = [...new Set(state.tasks.map(t => t.date))].sort().reverse();
+  const noted = Object.keys(state.dayNotes).filter(k => state.dayNotes[k].body.trim());
+  const dates = [...new Set([...state.tasks.map(t => t.date), ...noted])].sort().reverse();
   const popped = state.poppedTask;
   state.poppedTask = null;
   return `
     <header class="top">
       <button class="back-btn" data-action="home">${icon.left}<span>Today</span></button>
     </header>
-    <h1 class="page-title">Tasks</h1>
+    <h1 class="page-title">History</h1>
     ${dates.length ? dates.map(k => {
       const tasks = tasksOn(k);
+      const note = state.dayNotes[k]?.body.trim();
       return `
         <section class="task-day">
           <button class="task-day-head" data-action="open-day" data-date="${k}">
             <span class="task-day-name">${relDay(k)}</span>
             <span class="task-day-date">${fullDate(k)}</span>
-            <span class="count">${tasks.filter(t => t.done).length} of ${tasks.length}</span>
+            ${tasks.length ? `<span class="count">${tasks.filter(t => t.done).length} of ${tasks.length}</span>` : ''}
           </button>
-          <ul class="rows surface tasklist">
-            ${tasks.map(task => `
-              <li class="task${task.done ? ' is-done' : ''}">
-                ${taskBox(task, popped)}
-                <span class="task-title">${esc(task.title)}</span>
-              </li>`).join('')}
-          </ul>
+          ${tasks.length ? `
+            <ul class="rows surface tasklist">
+              ${tasks.map(task => `
+                <li class="task${task.done ? ' is-done' : ''}" dir="${dirOf(task.title)}">
+                  ${taskBox(task, popped)}
+                  <span class="task-title">${esc(task.title)}</span>
+                </li>`).join('')}
+            </ul>` : ''}
+          ${note ? `<div class="md history-note surface">${markdown(note)}</div>` : ''}
         </section>`;
     }).join('') : `
       <div class="empty surface">
-        <p class="empty-title">No tasks yet</p>
-        <p>Tasks you add on a day show up here, newest day first.</p>
+        <p class="empty-title">Nothing yet</p>
+        <p>Tasks and notes you add on a day show up here, newest day first.</p>
       </div>`}`;
 }
 
 function planBlock() {
   const body = state.editingPlan
-    ? `<textarea class="plan-input" data-plan aria-label="Plan" placeholder="# This week&#10;- Saturday: …">${esc(state.plan)}</textarea>`
+    ? `<textarea class="plan-input" data-plan dir="auto" aria-label="How my day goes" placeholder="- ورد&#10;- Four hours of work">${esc(state.plan)}</textarea>`
     : state.plan.trim()
       ? `<div class="md">${markdown(state.plan)}</div>`
-      : `<p class="placeholder">Tap to write the plan for the next week or two. Use # for headings, - for bullets, **bold** for emphasis.</p>`;
+      : `<p class="placeholder">Tap to write how a typical day goes. Use # for headings, - for bullets, **bold** for emphasis.</p>`;
   return `
     <section class="plan">
       <div class="section-head">
-        <h2>Plan</h2>
+        <h2>How my day goes</h2>
         <button class="pill${state.editingPlan ? ' is-primary' : ''}" data-action="${state.editingPlan ? 'done-plan' : 'edit-plan'}">
           ${state.editingPlan ? 'Done' : 'Edit'}
         </button>
       </div>
       <div class="plan-body surface${state.editingPlan ? ' is-editing' : ''}" ${state.editingPlan ? '' : 'data-action="edit-plan"'}>${body}</div>
     </section>`;
+}
+
+function planPage() {
+  const goals = activeGoals();
+  const past = pastGoals();
+  const popped = state.poppedCheck;
+  state.poppedCheck = null;
+  return `
+    <header class="top">
+      <button class="back-btn" data-action="home">${icon.left}<span>Today</span></button>
+      <button class="round-btn" data-action="new-goal" aria-label="New goal">${icon.plus}</button>
+    </header>
+    <h1 class="page-title">Plan</h1>
+    ${goals.length ? goals.map(g => goalCard(g, popped)).join('') : `
+      <div class="empty surface">
+        <p class="empty-title">No goal yet</p>
+        <p>Give it a deadline, then add check-ins: dates to see whether you’re on track.</p>
+        <button class="pill is-primary" data-action="new-goal">New goal</button>
+      </div>`}
+    ${planBlock()}
+    ${past.length ? `
+      <section>
+        <div class="section-head"><h2>Past goals</h2></div>
+        <ul class="rows surface past">
+          ${past.map(g => `
+            <li>
+              <button class="past-goal" data-action="open-goal" data-id="${g.id}">
+                <span class="past-title" dir="auto">${esc(goalTitle(g))}</span>
+                <span class="tag${g.outcome === 'done' ? ' is-done' : ''}">${g.outcome === 'done' ? 'Achieved' : 'Archived'} ${shortDate(g.archivedOn)}</span>
+              </button>
+            </li>`).join('')}
+        </ul>
+      </section>` : ''}`;
+}
+
+function goalCard(goal, popped) {
+  const cps = checkpointsOf(goal.id);
+  const t = todayKey();
+  return `
+    <section class="goal surface">
+      <div class="goal-head" dir="${dirOf(goal.title)}">
+        <div class="goal-name-wrap">
+          <h2 class="goal-title" dir="auto">${esc(goalTitle(goal))}</h2>
+          <p class="goal-due"><span dir="ltr">${countdown(daysBetween(t, goal.deadline))} · ${shortDate(goal.deadline)}</span></p>
+        </div>
+        <button class="pill" data-action="open-goal" data-id="${goal.id}">Edit</button>
+      </div>
+      ${track(goal)}
+      ${cps.length ? `
+        <ol class="steps">
+          ${cps.map(c => `
+            <li class="step${c.doneOn ? ' is-done' : ''}${c.date === t ? ' is-today' : ''}" dir="${dirOf(c.title)}">
+              <button class="step-box" data-action="toggle-check" data-id="${c.id}" aria-pressed="${!!c.doneOn}"
+                aria-label="${esc(c.title || 'Check-in')}">
+                <span class="box is-round${popped === c.id ? ' pop' : ''}">${icon.check}</span>
+              </button>
+              <div class="step-body">
+                <span class="step-date"><span dir="ltr">${shortDate(c.date)} · ${c.doneOn ? 'done' : untilLabel(c.date)}</span></span>
+                <span class="step-title" dir="auto">${esc(c.title || 'Check-in')}</span>
+                ${c.notes.trim() ? `<div class="md step-notes">${markdown(c.notes)}</div>` : ''}
+              </div>
+            </li>`).join('')}
+        </ol>` : `<button class="carry" data-action="add-checkpoint" data-id="${goal.id}">Add a check-in</button>`}
+    </section>`;
+}
+
+function goalEditor(goal) {
+  const cps = checkpointsOf(goal.id);
+  return `
+    <header class="top">
+      <button class="back-btn" data-action="plan">${icon.left}<span>Plan</span></button>
+      <button class="round-btn danger" data-action="delete-goal" data-id="${goal.id}" aria-label="Delete goal">${icon.trash}</button>
+    </header>
+    <div class="goal-form surface">
+      <input class="goal-input" data-goal="${goal.id}" value="${esc(goal.title)}" maxlength="120" dir="auto"
+        placeholder="Goal, e.g. Finish Hifz before travel" enterkeyhint="done" autocomplete="off" aria-label="Goal">
+      <label class="field">
+        <span>Deadline</span>
+        <span class="field-note">${countdown(daysBetween(todayKey(), goal.deadline))}</span>
+        <input type="date" data-goal="${goal.id}" value="${goal.deadline}" required>
+      </label>
+    </div>
+    <div class="section-head">
+      <h2>Check-ins</h2>
+      <button class="pill" data-action="add-checkpoint" data-id="${goal.id}">Add</button>
+    </div>
+    ${cps.length ? cps.map(c => `
+      <div class="cp-form surface">
+        <div class="field">
+          <span>${untilLabel(c.date).replace(/^./, ch => ch.toUpperCase())}</span>
+          <input type="date" data-cp="${c.id}" value="${c.date}" required aria-label="Check-in date">
+          <button class="icon-btn danger" data-action="delete-checkpoint" data-id="${c.id}" aria-label="Delete check-in">${icon.trash}</button>
+        </div>
+        <input class="cp-title" data-cp="${c.id}" data-field="title" value="${esc(c.title)}" maxlength="160" dir="auto"
+          placeholder="What to check, e.g. Reached An-Naml 55?" enterkeyhint="done" autocomplete="off" aria-label="Check-in">
+        <textarea class="cp-notes" data-cp="${c.id}" data-field="notes" dir="auto" rows="2" aria-label="Notes"
+          placeholder="Notes: the target, and what ahead, on track or behind look like">${esc(c.notes)}</textarea>
+      </div>`).join('') : `
+      <p class="legend page-legend">A check-in is a date to see where you stand. On that day it shows on the home screen to tick.</p>`}
+    <div class="goal-actions">
+      ${goal.archivedOn ? `
+        <p class="legend">${goal.outcome === 'done' ? 'Achieved' : 'Archived'} ${fullDate(goal.archivedOn)}.</p>
+        <button class="pill" data-action="restore-goal" data-id="${goal.id}">Make active again</button>` : `
+        <button class="pill is-primary" data-action="achieve-goal" data-id="${goal.id}">Mark achieved</button>
+        <button class="pill" data-action="archive-goal" data-id="${goal.id}">Archive</button>
+        <p class="legend">Both move it to Past goals. Archive is for a goal you replaced or stopped.</p>`}
+    </div>`;
 }
 
 function notesList() {
@@ -492,9 +769,9 @@ function notesList() {
           return `
             <li>
               <button class="note" data-action="open-note" data-id="${n.id}">
-                <span class="note-title">${esc(title)}</span>
+                <span class="note-title" dir="auto">${esc(title)}</span>
                 <time>${noteDate(n.updatedAt)}</time>
-                ${snippet ? `<span class="note-snippet">${esc(snippet)}</span>` : ''}
+                ${snippet ? `<span class="note-snippet" dir="auto">${esc(snippet)}</span>` : ''}
               </button>
             </li>`;
         }).join('')}
@@ -520,7 +797,7 @@ function noteEditor(note) {
       <button class="round-btn danger" data-action="delete-note" data-id="${note.id}" aria-label="Delete note">${icon.trash}</button>
     </header>
     <div class="note-sheet surface">
-      <textarea class="note-input" data-note="${note.id}" placeholder="Title on the first line, then anything else" aria-label="Note">${esc(note.body)}</textarea>
+      <textarea class="note-input" data-note="${note.id}" dir="auto" placeholder="Title on the first line, then anything else" aria-label="Note">${esc(note.body)}</textarea>
     </div>`;
 }
 
@@ -580,10 +857,15 @@ async function connect(token) {
 // ---------- render + routing ----------
 
 let openNoteId = null;
+let openGoalId = null;
 
 function render() {
   const [route, id] = location.hash.slice(1).split('/');
   const note = route === 'notes' && id ? state.notes.find(n => n.id === id) : null;
+  if (openGoalId && openGoalId !== id) tidyGoal(openGoalId);
+  const goal = route === 'goal' && id ? findGoal(id) : null;
+  const opened = goal && goal.id !== openGoalId;
+  openGoalId = goal?.id ?? null;
 
   // Leaving a note that was never written in drops it rather than keeping a blank.
   if (openNoteId && openNoteId !== note?.id) {
@@ -595,15 +877,17 @@ function render() {
   }
   openNoteId = note?.id ?? null;
 
-  const screen = note ? 'note' : ['notes', 'backup', 'tasks'].includes(route) ? route : 'home';
-  $app.innerHTML = { note: () => noteEditor(note), notes: notesList, backup: backupScreen, tasks: taskHistory, home }[screen]();
+  const screen = note ? 'note' : goal ? 'goal' : ['notes', 'backup', 'tasks', 'plan', 'habits'].includes(route) ? route : 'home';
+  $app.innerHTML = {
+    note: () => noteEditor(note), goal: () => goalEditor(goal), notes: notesList, backup: backupScreen,
+    tasks: taskHistory, plan: planPage, habits: habitsPage, home,
+  }[screen]();
   document.body.dataset.screen = screen;
 
-  const area = $app.querySelector('textarea');
-  if (area) {
-    autosize(area);
-    if (state.editingPlan || (note && !note.body)) area.focus();
-  }
+  $app.querySelectorAll('textarea').forEach(autosize);
+  if (state.editingPlan) $app.querySelector('[data-plan]')?.focus();
+  else if (note && !note.body) $app.querySelector('[data-note]').focus();
+  else if (opened && !goal.title) $app.querySelector('.goal-input').focus();
 }
 
 function autosize(el) {
@@ -619,8 +903,7 @@ const actions = {
   prev: () => goTo(addDays(state.view, -7)),
   next: () => goTo(addDays(state.view, 7)),
   today: () => goTo(todayKey()),
-  'edit-items': () => { state.editingItems = true; render(); },
-  'done-items': () => { state.editingItems = false; flush(); render(); },
+  habits: () => { location.hash = 'habits'; },
   flip: el => { const item = findItem(el.dataset.id); item.counts = !item.counts; saveItems([item]); },
   delete: el => {
     const item = findItem(el.dataset.id);
@@ -632,6 +915,25 @@ const actions = {
   'delete-task': el => removeTask(el.dataset.id),
   carry: carryOver,
   tasks: () => { location.hash = 'tasks'; },
+  plan: () => { location.hash = 'plan'; },
+  'new-goal': newGoal,
+  'open-goal': el => { location.hash = `goal/${el.dataset.id}`; },
+  'toggle-check': el => toggleCheckIn(el.dataset.id),
+  'add-checkpoint': el => { flush(); addCheckpoint(el.dataset.id); },
+  'delete-checkpoint': el => {
+    const cp = findCheckpoint(el.dataset.id);
+    if ((cp.title.trim() || cp.notes.trim()) && !confirm('Delete this check-in?')) return;
+    removeCheckpoint(cp.id);
+    render();
+  },
+  'achieve-goal': el => { flush(); archiveGoal(el.dataset.id, 'done'); },
+  'archive-goal': el => { flush(); archiveGoal(el.dataset.id, 'dropped'); },
+  'restore-goal': el => archiveGoal(el.dataset.id, null),
+  'delete-goal': el => {
+    if (!confirm('Delete this goal and its check-ins? To keep it under Past goals, archive it instead.')) return;
+    removeGoal(el.dataset.id);
+    location.hash = 'plan';
+  },
   'open-day': el => { goTo(el.dataset.date); location.hash = ''; },
   'edit-plan': () => { if (!state.editingPlan) { state.editingPlan = true; render(); } },
   'done-plan': () => { state.editingPlan = false; flush(); render(); },
@@ -682,6 +984,20 @@ $app.addEventListener('input', e => {
     later(task.id, () => store.saveTasks([task]));
   } else if (el.matches('[data-form="task"] input')) {
     state.taskDraft = el.value;
+  } else if (el.matches('[data-daynote]')) {
+    const note = { date: el.dataset.daynote, body: el.value, updatedAt: new Date().toISOString() };
+    state.dayNotes[note.date] = note;
+    autosize(el);
+    later(`day:${note.date}`, () => store.saveDayNote(note));
+  } else if (el.matches('.goal-input')) {
+    const goal = findGoal(el.dataset.goal);
+    goal.title = el.value.trim();
+    later(goal.id, () => store.saveGoals([goal]));
+  } else if (el.matches('[data-cp][data-field]')) {
+    const cp = findCheckpoint(el.dataset.cp);
+    cp[el.dataset.field] = el.dataset.field === 'title' ? el.value.trim() : el.value;
+    if (el.matches('textarea')) autosize(el);
+    later(cp.id, () => store.saveCheckpoints([cp]));
   }
 });
 
@@ -689,10 +1005,25 @@ $app.addEventListener('input', e => {
 $app.addEventListener('change', e => {
   if (e.target.matches('.title-input') && !e.target.value.trim()) e.target.value = findItem(e.target.dataset.id).title;
   if (e.target.matches('[data-task]') && !e.target.value.trim()) removeTask(e.target.dataset.task);
+  // Dates take effect at once (countdowns and order move with them); a cleared date keeps the saved one.
+  if (e.target.matches('[type="date"]')) {
+    const el = e.target;
+    if (el.value && el.dataset.goal) {
+      const goal = findGoal(el.dataset.goal);
+      goal.deadline = el.value;
+      store.saveGoals([goal]);
+    } else if (el.value) {
+      const cp = findCheckpoint(el.dataset.cp);
+      cp.date = el.value;
+      store.saveCheckpoints([cp]);
+    }
+    flush();
+    render();
+  }
 });
 
 $app.addEventListener('keydown', e => {
-  if (e.key === 'Enter' && e.target.matches('.title-input, [data-task]')) e.target.blur();
+  if (e.key === 'Enter' && e.target.matches('.title-input, [data-task], .goal-input, .cp-title')) e.target.blur();
 });
 
 $app.addEventListener('submit', e => {
@@ -782,6 +1113,9 @@ function apply(data) {
   state.plan = data.plan.text;
   state.notes = data.notes;
   state.tasks = data.tasks;
+  state.dayNotes = data.dayNotes;
+  state.goals = data.goals;
+  state.checkpoints = data.checkpoints;
 }
 
 apply(await store.load());

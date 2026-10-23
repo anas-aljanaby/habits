@@ -3,9 +3,12 @@
 //
 //   items  { id, title, counts, position, createdOn, deletedOn }
 //   days   { date, required: [itemId], done: [itemId] }
-//   plan   { text, updatedAt }                  (single row)
+//   plan   { text, updatedAt }                  (single row) the daily structure, "how my day goes"
 //   notes  { id, body, updatedAt }
 //   tasks  { id, date, title, done, position }   one-off to-dos for a day, apart from habits
+//   dayNotes    { date, body, updatedAt }        free text for a day, under its tasks
+//   goals       { id, title, deadline, createdOn, archivedOn, outcome }   outcome: null | 'done' | 'dropped'
+//   checkpoints { id, goalId, date, title, notes, doneOn }                a check-in along a goal
 //
 // Dates are local 'YYYY-MM-DD' strings.
 //
@@ -33,7 +36,7 @@ function read() {
 
 // Fills in record types added after a copy was saved, locally or in the backup.
 function withDefaults(data) {
-  return { tasks: [], ...data };
+  return { tasks: [], dayNotes: {}, goals: [], checkpoints: [], ...data };
 }
 
 // One-time import of the earlier version's data so the streak and history carry over.
@@ -233,5 +236,34 @@ export async function saveTasks(tasks) {
 
 export async function deleteTask(id) {
   db.tasks = db.tasks.filter(t => t.id !== id);
+  write();
+}
+
+// An emptied note is dropped rather than kept as a blank.
+export async function saveDayNote(note) {
+  if (note.body.trim()) db.dayNotes[note.date] = structuredClone(note);
+  else delete db.dayNotes[note.date];
+  write();
+}
+
+export async function saveGoals(goals) {
+  for (const goal of goals) upsert(db.goals, structuredClone(goal));
+  write();
+}
+
+// Takes the goal's checkpoints with it.
+export async function deleteGoal(id) {
+  db.goals = db.goals.filter(g => g.id !== id);
+  db.checkpoints = db.checkpoints.filter(c => c.goalId !== id);
+  write();
+}
+
+export async function saveCheckpoints(checkpoints) {
+  for (const cp of checkpoints) upsert(db.checkpoints, structuredClone(cp));
+  write();
+}
+
+export async function deleteCheckpoint(id) {
+  db.checkpoints = db.checkpoints.filter(c => c.id !== id);
   write();
 }
