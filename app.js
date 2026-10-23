@@ -12,6 +12,8 @@ const state = {
   editingItems: false,
   editingPlan: false,
   popped: null,         // id just ticked, so its box gets the check feedback once
+  connecting: false,
+  backupError: '',
 };
 
 // ---------- dates (local 'YYYY-MM-DD') ----------
@@ -179,6 +181,7 @@ function home() {
       <div class="brand">${mark}<span>Tally</span></div>
       <button class="round-btn" data-action="notes" aria-label="Notes">${icon.notes}</button>
     </header>
+    ${backupBanner()}
     ${dayCard()}
     ${state.editingItems ? habitEditor() : habitList()}
     ${planBlock()}`;
@@ -384,6 +387,59 @@ function noteEditor(note) {
     </div>`;
 }
 
+// ---------- backup ----------
+
+const TOKEN_URL = 'https://github.com/settings/personal-access-tokens/new?name=Tally&description=Tally+backup' +
+  '&target_name=anas-aljanaby&expires_in=none&contents=write';
+
+function backupBanner() {
+  const s = store.syncStatus();
+  if (s !== 'off' && s !== 'denied') return '';
+  return `
+    <div class="empty surface backup-banner">
+      <p class="empty-title">${s === 'off' ? 'Backup is off' : 'Backup stopped'}</p>
+      <p>${s === 'off'
+        ? 'Everything is only on this phone. Turn on backup so deleting the app doesn’t lose it.'
+        : 'GitHub no longer accepts the access key. Paste a new one; nothing on this phone is lost.'}</p>
+      <button class="pill is-primary" data-action="backup">${s === 'off' ? 'Turn on backup' : 'Fix backup'}</button>
+    </div>`;
+}
+
+function backupScreen() {
+  return `
+    <header class="top">
+      <button class="back-btn" data-action="home">${icon.left}<span>Today</span></button>
+    </header>
+    <h1 class="page-title">Backup</h1>
+    <div class="empty surface backup">
+      <p>Tally keeps a copy of everything in your private <strong>tally-data</strong> repository on GitHub, so it comes back after reinstalling.</p>
+      <p>Paste the GitHub access key for it below. Keep the key in your Passwords or Notes app: you paste it again after a reinstall.</p>
+      <a href="${TOKEN_URL}" target="_blank" rel="noopener">Create a new key on GitHub</a>
+    </div>
+    <form class="add-row surface" data-form="backup">
+      <input name="token" placeholder="github_pat_…" autocomplete="off" autocapitalize="off" autocorrect="off"
+        spellcheck="false" enterkeyhint="go" aria-label="Access key" required>
+      <button class="pill is-primary" type="submit" ${state.connecting ? 'disabled' : ''}>${state.connecting ? 'Connecting…' : 'Connect'}</button>
+    </form>
+    ${state.backupError ? `<p class="legend backup-error">${state.backupError}</p>` : ''}`;
+}
+
+async function connect(token) {
+  state.connecting = true;
+  state.backupError = '';
+  render();
+  try {
+    apply(await store.connect(token));
+    location.hash = '';
+  } catch (e) {
+    state.backupError = e.message === 'denied'
+      ? 'GitHub didn’t accept that key. Check it has access to tally-data with Contents set to “Read and write”.'
+      : 'Couldn’t reach GitHub. Check the connection and try again.';
+  }
+  state.connecting = false;
+  render();
+}
+
 // ---------- render + routing ----------
 
 let openNoteId = null;
@@ -402,8 +458,9 @@ function render() {
   }
   openNoteId = note?.id ?? null;
 
-  $app.innerHTML = note ? noteEditor(note) : route === 'notes' ? notesList() : home();
-  document.body.dataset.screen = note ? 'note' : route === 'notes' ? 'notes' : 'home';
+  const screen = note ? 'note' : route === 'notes' || route === 'backup' ? route : 'home';
+  $app.innerHTML = { note: () => noteEditor(note), notes: notesList, backup: backupScreen, home }[screen]();
+  document.body.dataset.screen = screen;
 
   const area = $app.querySelector('textarea');
   if (area) {
@@ -438,6 +495,7 @@ const actions = {
   'done-plan': () => { state.editingPlan = false; flush(); render(); },
   home: () => { location.hash = ''; },
   notes: () => { location.hash = 'notes'; },
+  backup: () => { state.backupError = ''; location.hash = 'backup'; },
   'new-note': () => {
     const note = { id: crypto.randomUUID(), body: '', updatedAt: new Date().toISOString() };
     state.notes.push(note);
@@ -490,6 +548,7 @@ $app.addEventListener('keydown', e => {
 
 $app.addEventListener('submit', e => {
   e.preventDefault();
+  if (e.target.dataset.form === 'backup') return connect(e.target.elements.token.value);
   const input = e.target.elements.title;
   addItem(input.value);
   $app.querySelector('[data-form="add"] input')?.focus();
@@ -562,11 +621,15 @@ setInterval(checkDate, 30_000);
 
 // ---------- start ----------
 
-const data = await store.load();
-state.items = data.items;
-state.days = data.days;
-state.plan = data.plan.text;
-state.notes = data.notes;
+function apply(data) {
+  state.items = data.items;
+  state.days = data.days;
+  state.plan = data.plan.text;
+  state.notes = data.notes;
+}
+
+apply(await store.load());
 render();
+store.watchSync(() => { if (document.body.dataset.screen === 'home' && !state.editingPlan) render(); });
 
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
