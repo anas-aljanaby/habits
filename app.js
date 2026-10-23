@@ -153,7 +153,7 @@ function reorder(ids) {
 function goTo(k) {
   const t = todayKey();
   const from = weekStart(state.view);
-  state.view = k > t ? t : k;
+  state.view = k;
   const to = weekStart(state.view);
   state.slide = to < from ? 'back' : to > from ? 'forward' : null;
   render();
@@ -446,14 +446,14 @@ function dayCard() {
           </div>
         </div>
         <div class="stepper">
-          <button class="round-btn" data-action="prev" aria-label="Previous week">${icon.left}</button>
-          <button class="round-btn${weeksBack ? ' is-toward-now' : ''}" data-action="next" aria-label="Next week"
-            ${weeksBack ? '' : 'disabled'}>${icon.right}</button>
+          <button class="round-btn${weeksBack < 0 ? ' is-toward-now' : ''}" data-action="prev" aria-label="Previous week">${icon.left}</button>
+          <button class="round-btn${weeksBack > 0 ? ' is-toward-now' : ''}" data-action="next" aria-label="Next week">${icon.right}</button>
         </div>
       </div>
       ${weeksBack ? `
         <p class="week-off">
-          <span>${weeksBack === 1 ? 'Last week' : `${weeksBack} weeks ago`}</span>
+          <span>${weeksBack === 1 ? 'Last week' : weeksBack > 1 ? `${weeksBack} weeks ago`
+            : weeksBack === -1 ? 'Next week' : `In ${-weeksBack} weeks`}</span>
           ${weekRange(start)}
         </p>` : ''}
       <div class="week${slide ? ` slide-${slide}` : ''}">
@@ -483,7 +483,7 @@ function dayCell(k, i, t, v) {
   const mark = checkInsOn(k).length ? 'check-in' : tasksOn(k).length ? 'tasks' : '';
   return `
     <li class="${cls}">
-      <button class="day" data-action="day" data-date="${k}" ${status === 'future' ? 'disabled' : ''}
+      <button class="day" data-action="day" data-date="${k}"
         aria-label="${label}, ${status === 'done' ? 'complete' : status === 'missed' ? 'missed' : 'not complete'}${mark ? `, has ${mark}` : ''}"
         ${k === v ? 'aria-current="date"' : ''}>
         <span class="day-label">${DAY_LABELS[parse(k).getDay()]}</span>
@@ -496,6 +496,7 @@ function dayCell(k, i, t, v) {
 function habitList() {
   const k = state.view;
   const isToday = k === todayKey();
+  const isFuture = k > todayKey();
   const items = itemsOn(k);
   const day = state.days[k];
   const done = new Set(day?.done ?? []);
@@ -507,7 +508,7 @@ function habitList() {
       <section class="habits">
         <div class="section-head"><h2>Habits</h2></div>
         <div class="empty surface">
-          ${isToday
+          ${isToday || isFuture
             ? `<p class="empty-title">Your checklist is empty</p>
                <p>Add the things you want to do every day.</p>
                <button class="pill is-primary" data-action="habits">Add habits</button>`
@@ -529,7 +530,7 @@ function habitList() {
         ${items.map(item => `
           <li>
             <button class="habit${done.has(item.id) ? ' is-done' : ''}" data-action="toggle" data-id="${item.id}"
-              aria-pressed="${done.has(item.id)}" dir="${dirOf(item.title)}">
+              aria-pressed="${done.has(item.id)}" dir="${dirOf(item.title)}" ${isFuture ? 'disabled' : ''}>
               <span class="box${item.counts ? '' : ' is-round'}${popped === item.id ? ' pop' : ''}">${icon.check}</span>
               <span class="habit-title">${esc(item.title)}</span>
             </button>
