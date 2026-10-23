@@ -180,6 +180,26 @@
   .today-btn::after { content: ""; position: absolute; inset: -8px -4px; }
   .today-btn:active { background: rgba(244, 181, 69, 0.25); }
   .stepper { display: flex; gap: 8px; margin-top: 2px; }
+  /* Off the current week, the forward arrow lights up as the way back to now. */
+  .round-btn.is-toward-now { color: var(--amber); box-shadow: inset 0 0 0 1.5px rgba(244, 181, 69, 0.4), 0 1px 2px rgba(0, 0, 0, 0.6); }
+
+  .week-off {
+    margin-top: 14px;
+    padding-top: 11px;
+    border-top: 1px solid var(--line);
+    font-size: 13px;
+    color: var(--text-3);
+  }
+  .week-off span { margin-right: 6px; font-weight: 600; color: var(--text-2); }
+  .week-off + .week { margin-top: 6px; padding-top: 0; border-top: 0; }
+
+  /* A week change slides the strip in from the side it came from. */
+  .slide-back, .slide-forward { overflow: hidden; }
+  .slide-back .days { animation: from-left 0.24s ease-out; }
+  .slide-forward .days { animation: from-right 0.24s ease-out; }
+  @keyframes from-left { from { transform: translateX(-28px); opacity: 0.2; } }
+  @keyframes from-right { from { transform: translateX(28px); opacity: 0.2; } }
+  @media (prefers-reduced-motion: reduce) { .slide-back .days, .slide-forward .days { animation: none; } }
 
   .week {
     display: grid;
@@ -232,6 +252,9 @@
     box-shadow: inset 0 1.5px 3px rgba(0, 0, 0, 0.9), inset 0 0 0 1.5px rgba(255, 250, 235, 0.13), 0 1px 0 rgba(255, 250, 235, 0.05);
   }
   .tile svg { width: 18px; height: 18px; }
+  /* Under the tile: the day has tasks, or a check-in (amber). */
+  .day-dot { position: absolute; bottom: 3px; left: 50%; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: rgba(255, 250, 235, 0.32); }
+  .day-dot.is-check { background: var(--amber); }
   .is-done .tile {
     color: var(--bone-ink);
     background: linear-gradient(180deg, #f6efe2, var(--bone-shade));
@@ -572,6 +595,19 @@
     font-size: 16px;
     line-height: 1.45;
   }
+  .search { margin-bottom: 18px; padding: 0 16px; border-radius: 16px; }
+  .search input {
+    display: block;
+    width: 100%;
+    height: 46px;
+    border: 0;
+    outline: none;
+    background: transparent;
+    font-size: 16px;
+    -webkit-appearance: none;
+    appearance: none;
+  }
+  .search input::-webkit-search-cancel-button { opacity: 0.45; }
   .history-note { margin-top: 8px; padding: 13px 18px; border-radius: 18px; font-size: 15px; }
   .history-note p { color: var(--text); }
 

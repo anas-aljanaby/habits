@@ -17,6 +17,8 @@ const state = {
   popped: null,         // id just ticked, so its box gets the check feedback once
   poppedTask: null,
   poppedCheck: null,
+  slide: null,          // 'back' | 'forward' after a week change, so the strip moves that way once
+  historyQuery: '',
   taskDraft: '',        // the half-typed new task survives re-renders
   connecting: false,
   backupError: '',
@@ -41,6 +43,14 @@ function relDay(k) {
 }
 // Weeks run Saturday to Friday.
 const weekStart = k => addDays(k, -((parse(k).getDay() + 1) % 7));
+function weekRange(start) {
+  const a = parse(start);
+  const b = parse(addDays(start, 6));
+  const month = d => d.toLocaleDateString('en-GB', { month: 'short' });
+  return a.getMonth() === b.getMonth()
+    ? `${a.getDate()} – ${b.getDate()} ${month(b)}`
+    : `${a.getDate()} ${month(a)} – ${b.getDate()} ${month(b)}`;
+}
 const daysBetween = (a, b) => Math.round((parse(b) - parse(a)) / 864e5);
 const shortDate = k => parse(k).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
 function untilLabel(k) {
@@ -142,7 +152,10 @@ function reorder(ids) {
 
 function goTo(k) {
   const t = todayKey();
+  const from = weekStart(state.view);
   state.view = k > t ? t : k;
+  const to = weekStart(state.view);
+  state.slide = to < from ? 'back' : to > from ? 'forward' : null;
   render();
 }
 
@@ -417,6 +430,9 @@ function dayCard() {
   const start = weekStart(v);
   const week = Array.from({ length: 7 }, (_, i) => addDays(start, i));
   const n = streak();
+  const weeksBack = daysBetween(start, weekStart(t)) / 7;
+  const slide = state.slide;
+  state.slide = null;
   return `
     <section class="daycard surface">
       <div class="daycard-head">
@@ -431,10 +447,16 @@ function dayCard() {
         </div>
         <div class="stepper">
           <button class="round-btn" data-action="prev" aria-label="Previous week">${icon.left}</button>
-          <button class="round-btn" data-action="next" aria-label="Next week" ${start === weekStart(t) ? 'disabled' : ''}>${icon.right}</button>
+          <button class="round-btn${weeksBack ? ' is-toward-now' : ''}" data-action="next" aria-label="Next week"
+            ${weeksBack ? '' : 'disabled'}>${icon.right}</button>
         </div>
       </div>
-      <div class="week">
+      ${weeksBack ? `
+        <p class="week-off">
+          <span>${weeksBack === 1 ? 'Last week' : `${weeksBack} weeks ago`}</span>
+          ${weekRange(start)}
+        </p>` : ''}
+      <div class="week${slide ? ` slide-${slide}` : ''}">
         <div class="streak${isComplete(t) ? ' is-lit' : ''}">
           <span class="streak-num">${n}</span>
           <span class="streak-label">day streak</span>
@@ -458,13 +480,15 @@ function dayCell(k, i, t, v) {
     status === 'done' && i === 0 && isComplete(addDays(k, -1)) && 'link-prev',
   ].filter(Boolean).join(' ');
   const label = parse(k).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
+  const mark = checkInsOn(k).length ? 'check-in' : tasksOn(k).length ? 'tasks' : '';
   return `
     <li class="${cls}">
       <button class="day" data-action="day" data-date="${k}" ${status === 'future' ? 'disabled' : ''}
-        aria-label="${label}, ${status === 'done' ? 'complete' : status === 'missed' ? 'missed' : 'not complete'}"
+        aria-label="${label}, ${status === 'done' ? 'complete' : status === 'missed' ? 'missed' : 'not complete'}${mark ? `, has ${mark}` : ''}"
         ${k === v ? 'aria-current="date"' : ''}>
         <span class="day-label">${DAY_LABELS[parse(k).getDay()]}</span>
         <span class="tile">${status === 'done' ? icon.check : ''}</span>
+        ${mark ? `<span class="day-dot${mark === 'check-in' ? ' is-check' : ''}"></span>` : ''}
       </button>
     </li>`;
 }
@@ -591,41 +615,61 @@ function taskList() {
     </section>`;
 }
 
+// Case, Arabic diacritics and alef/yaa/taa marbuta forms don't matter when searching.
+const fold = s => s.toLowerCase().normalize('NFKD')
+  .replace(/[\u0300-\u036f\u064b-\u065f\u0670\u0640]/g, '')
+  .replace(/[أإآ]/g, 'ا').replace(/ى/g, 'ي').replace(/ة/g, 'ه');
+
 function taskHistory() {
-  const noted = Object.keys(state.dayNotes).filter(k => state.dayNotes[k].body.trim());
-  const dates = [...new Set([...state.tasks.map(t => t.date), ...noted])].sort().reverse();
-  const popped = state.poppedTask;
-  state.poppedTask = null;
   return `
     <header class="top">
       <button class="back-btn" data-action="home">${icon.left}<span>Today</span></button>
     </header>
     <h1 class="page-title">History</h1>
-    ${dates.length ? dates.map(k => {
-      const tasks = tasksOn(k);
-      const note = state.dayNotes[k]?.body.trim();
-      return `
-        <section class="task-day">
-          <button class="task-day-head" data-action="open-day" data-date="${k}">
-            <span class="task-day-name">${relDay(k)}</span>
-            <span class="task-day-date">${fullDate(k)}</span>
-            ${tasks.length ? `<span class="count">${tasks.filter(t => t.done).length} of ${tasks.length}</span>` : ''}
-          </button>
-          ${tasks.length ? `
-            <ul class="rows surface tasklist">
-              ${tasks.map(task => `
-                <li class="task${task.done ? ' is-done' : ''}" dir="${dirOf(task.title)}">
-                  ${taskBox(task, popped)}
-                  <span class="task-title">${esc(task.title)}</span>
-                </li>`).join('')}
-            </ul>` : ''}
-          ${note ? `<div class="md history-note surface">${markdown(note)}</div>` : ''}
-        </section>`;
-    }).join('') : `
-      <div class="empty surface">
-        <p class="empty-title">Nothing yet</p>
-        <p>Tasks and notes you add on a day show up here, newest day first.</p>
-      </div>`}`;
+    <div class="search surface">
+      <input type="search" data-search value="${esc(state.historyQuery)}" placeholder="Search tasks and notes" dir="auto"
+        autocomplete="off" enterkeyhint="search" aria-label="Search tasks and notes">
+    </div>
+    <div class="history-results">${historyResults()}</div>`;
+}
+
+function historyResults() {
+  const q = fold(state.historyQuery.trim());
+  const hit = s => !q || fold(s).includes(q);
+  const noted = Object.keys(state.dayNotes).filter(k => state.dayNotes[k].body.trim());
+  const dates = [...new Set([...state.tasks.map(t => t.date), ...noted])].sort().reverse();
+  const popped = state.poppedTask;
+  state.poppedTask = null;
+  const days = dates.map(k => {
+    const tasks = tasksOn(k).filter(t => hit(t.title));
+    const note = state.dayNotes[k]?.body.trim();
+    const showNote = note && hit(note);
+    if (!tasks.length && !showNote) return '';
+    return `
+      <section class="task-day">
+        <button class="task-day-head" data-action="open-day" data-date="${k}">
+          <span class="task-day-name">${relDay(k)}</span>
+          <span class="task-day-date">${fullDate(k)}</span>
+          ${tasks.length && !q ? `<span class="count">${tasks.filter(t => t.done).length} of ${tasks.length}</span>` : ''}
+        </button>
+        ${tasks.length ? `
+          <ul class="rows surface tasklist">
+            ${tasks.map(task => `
+              <li class="task${task.done ? ' is-done' : ''}" dir="${dirOf(task.title)}">
+                ${taskBox(task, popped)}
+                <span class="task-title">${esc(task.title)}</span>
+              </li>`).join('')}
+          </ul>` : ''}
+        ${showNote ? `<div class="md history-note surface">${markdown(note)}</div>` : ''}
+      </section>`;
+  }).join('');
+  if (days) return days;
+  return q ? `
+    <div class="empty surface"><p>Nothing matches “${esc(state.historyQuery.trim())}”.</p></div>` : `
+    <div class="empty surface">
+      <p class="empty-title">Nothing yet</p>
+      <p>Tasks and notes you add on a day show up here, newest day first.</p>
+    </div>`;
 }
 
 function planBlock() {
@@ -914,7 +958,7 @@ const actions = {
   'toggle-task': el => toggleTask(el.dataset.id),
   'delete-task': el => removeTask(el.dataset.id),
   carry: carryOver,
-  tasks: () => { location.hash = 'tasks'; },
+  tasks: () => { state.historyQuery = ''; location.hash = 'tasks'; },
   plan: () => { location.hash = 'plan'; },
   'new-goal': newGoal,
   'open-goal': el => { location.hash = `goal/${el.dataset.id}`; },
@@ -984,6 +1028,10 @@ $app.addEventListener('input', e => {
     later(task.id, () => store.saveTasks([task]));
   } else if (el.matches('[data-form="task"] input')) {
     state.taskDraft = el.value;
+  } else if (el.matches('[data-search]')) {
+    // Only the results redraw, so the field keeps focus and the keyboard stays up.
+    state.historyQuery = el.value;
+    $app.querySelector('.history-results').innerHTML = historyResults();
   } else if (el.matches('[data-daynote]')) {
     const note = { date: el.dataset.daynote, body: el.value, updatedAt: new Date().toISOString() };
     state.dayNotes[note.date] = note;
@@ -1101,7 +1149,19 @@ function checkDate() {
   lastToday = t;
   if (document.body.dataset.screen === 'home' && !state.editingPlan) render();
 }
-document.addEventListener('visibilitychange', () => (document.hidden ? flush() : checkDate()));
+// Coming back after a while starts on today again, wherever the week strip was left.
+let hiddenAt = Date.now();
+function resume() {
+  checkDate();
+  if (Date.now() - hiddenAt < 30 * 60_000 || state.view === todayKey()) return;
+  state.view = todayKey();
+  if (document.body.dataset.screen === 'home' && !state.editingPlan) render();
+}
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) return resume();
+  hiddenAt = Date.now();
+  flush();
+});
 window.addEventListener('pagehide', flush);
 setInterval(checkDate, 30_000);
 
