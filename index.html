@@ -316,16 +316,14 @@
   /* ---------- focus: the nearest goal, first thing on the home screen ---------- */
 
   .focus {
-    display: block;
-    width: 100%;
-    padding: 15px 18px 16px;
-    text-align: start;
     background:
       radial-gradient(90% 120% at 0% 0%, rgba(244, 181, 69, 0.09), rgba(244, 181, 69, 0) 60%),
       linear-gradient(180deg, var(--surface-top), var(--surface-bottom));
   }
-  .focus:active { filter: brightness(1.12); }
-  .focus > span { display: block; }
+  .focus-main { display: block; width: 100%; padding: 15px 18px 16px; text-align: start; }
+  .focus > .focus-main { border-radius: inherit; }
+  .focus-main:active { filter: brightness(1.12); }
+  .focus-main > span { display: block; }
   .focus-head { display: flex !important; justify-content: space-between; align-items: baseline; gap: 12px; }
   .kicker { font-size: 12px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: var(--amber); }
   .focus-due { font-size: 13px; color: var(--text-3); }
@@ -339,6 +337,24 @@
   .focus-next-when { font-size: 13px; font-weight: 600; color: var(--text-3); }
   .focus-next.is-due .focus-next-when { color: var(--amber); }
   .focus-next-title { font-size: 16px; line-height: 1.35; }
+  .focus-details { margin-inline: 18px; border-top: 1px solid var(--line); }
+  .focus-details > summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 44px;
+    list-style: none;
+    cursor: pointer;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-2);
+  }
+  .focus-details > summary::-webkit-details-marker { display: none; }
+  .focus-details > summary:hover, .focus-details[open] > summary { color: var(--text); }
+  .focus-details > summary svg { width: 20px; height: 20px; transform: rotate(90deg); }
+  .focus-details[open] > summary svg { transform: rotate(-90deg); }
+  .focus-details > .md { padding-block: 2px 16px; overflow-wrap: anywhere; }
   .focus.is-empty { display: grid; grid-template-columns: 1fr auto; align-items: center; column-gap: 14px; }
   .focus.is-empty .focus-head { grid-column: 1 / -1; }
   .focus-empty { margin-top: 6px; font-size: 15px; line-height: 1.4; color: var(--text-2); }
@@ -680,7 +696,7 @@
   .goal-due { margin-top: 4px; font-size: 15px; font-weight: 600; color: var(--amber); }
   .goal > .track { margin: 16px 0 6px; }
   .goal-body { margin-top: 16px; padding-block: 14px; border-block: 1px solid var(--line); overflow-wrap: anywhere; }
-  .goal-body li { margin-block: 5px; }
+  .goal-body li, .focus-details li { margin-block: 5px; }
   .goal > .carry { margin: 10px 0 12px; }
   .steps { margin-top: 10px; }
   /* Each step mirrors to its own text, so they stay separate rows rather than one joined line. */

@@ -337,7 +337,7 @@ const mark = '<svg class="mark" viewBox="236 300 552 424" aria-hidden="true"><us
 
 // ---------- views ----------
 
-function home() {
+function home(expandedFocusGoalId) {
   return `
     <header class="top">
       <div class="brand">${mark}<span>Tally</span></div>
@@ -345,18 +345,18 @@ function home() {
     </header>
     ${backupBanner()}
     ${dayCard()}
-    ${focusCard()}
+    ${focusCard(expandedFocusGoalId)}
     ${checkIns()}
     ${habitList()}
     ${taskList()}`;
 }
 
-// The nearest active goal: its countdown and what's next. Opens the plan.
-function focusCard() {
+// The nearest active goal: its countdown, what's next, and optional details.
+function focusCard(expandedGoalId) {
   const goals = activeGoals();
   if (!goals.length) {
     return `
-      <button class="focus surface is-empty" data-action="new-goal">
+      <button class="focus focus-main surface is-empty" data-action="new-goal">
         <span class="focus-head"><span class="kicker">Focus</span></span>
         <span class="focus-empty">Set a goal with a deadline, and check-ins to see if you’re on track.</span>
         <span class="focus-add">${icon.plus}</span>
@@ -365,25 +365,33 @@ function focusCard() {
   const goal = goals[0];
   const left = daysBetween(todayKey(), goal.deadline);
   const next = checkpointsOf(goal.id).find(c => !c.doneOn);
+  const body = goal.body?.trim();
   return `
-    <button class="focus surface" data-action="plan" aria-label="Open plan">
-      <span class="focus-head">
-        <span class="kicker">Focus${goals.length > 1 ? ` · ${goals.length} goals` : ''}</span>
-        <span class="focus-due">by ${shortDate(goal.deadline)}</span>
-      </span>
-      <span class="focus-title" dir="auto">${esc(goalTitle(goal))}</span>
-      <span class="focus-count">
-        <span class="focus-num${left < 0 ? ' is-over' : ''}">${Math.abs(left)}</span>
-        <span class="focus-unit">${left === 0 ? 'due today' : `${Math.abs(left) === 1 ? 'day' : 'days'} ${left < 0 ? 'past' : 'left'}`}</span>
-        ${track(goal)}
-      </span>
-      ${next ? `
-        <span class="focus-next${next.date <= todayKey() ? ' is-due' : ''}">
-          <span class="focus-next-when">${next.date === todayKey() ? 'Check-in today' : next.date < todayKey()
-            ? `Check-in was due ${shortDate(next.date)}` : `Next check-in · ${shortDate(next.date)} · ${untilLabel(next.date)}`}</span>
-          <span class="focus-next-title" dir="auto">${esc(next.title || 'Check-in')}</span>
-        </span>` : ''}
-    </button>`;
+    <div class="focus surface">
+      <button class="focus-main" data-action="plan" aria-label="Open plan">
+        <span class="focus-head">
+          <span class="kicker">Focus${goals.length > 1 ? ` · ${goals.length} goals` : ''}</span>
+          <span class="focus-due">by ${shortDate(goal.deadline)}</span>
+        </span>
+        <span class="focus-title" dir="auto">${esc(goalTitle(goal))}</span>
+        <span class="focus-count">
+          <span class="focus-num${left < 0 ? ' is-over' : ''}">${Math.abs(left)}</span>
+          <span class="focus-unit">${left === 0 ? 'due today' : `${Math.abs(left) === 1 ? 'day' : 'days'} ${left < 0 ? 'past' : 'left'}`}</span>
+          ${track(goal)}
+        </span>
+        ${next ? `
+          <span class="focus-next${next.date <= todayKey() ? ' is-due' : ''}">
+            <span class="focus-next-when">${next.date === todayKey() ? 'Check-in today' : next.date < todayKey()
+              ? `Check-in was due ${shortDate(next.date)}` : `Next check-in · ${shortDate(next.date)} · ${untilLabel(next.date)}`}</span>
+            <span class="focus-next-title" dir="auto">${esc(next.title || 'Check-in')}</span>
+          </span>` : ''}
+      </button>
+      ${body ? `
+        <details class="focus-details" data-goal="${esc(goal.id)}"${expandedGoalId === goal.id ? ' open' : ''}>
+          <summary>Goal details ${icon.right}</summary>
+          <div class="md">${markdown(body)}</div>
+        </details>` : ''}
+    </div>`;
 }
 
 // Time from the goal's start to its deadline, filled up to today, with its check-ins as dots.
@@ -929,9 +937,10 @@ function render() {
   openNoteId = note?.id ?? null;
 
   const screen = note ? 'note' : goal ? 'goal' : ['notes', 'backup', 'tasks', 'plan', 'habits'].includes(route) ? route : 'home';
+  const expandedFocusGoalId = $app.querySelector('.focus-details[open]')?.dataset.goal;
   $app.innerHTML = {
     note: () => noteEditor(note), goal: () => goalEditor(goal), notes: notesList, backup: backupScreen,
-    tasks: taskHistory, plan: planPage, habits: habitsPage, home,
+    tasks: taskHistory, plan: planPage, habits: habitsPage, home: () => home(expandedFocusGoalId),
   }[screen]();
   document.body.dataset.screen = screen;
 
