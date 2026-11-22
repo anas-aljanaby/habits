@@ -7,7 +7,7 @@
 //   notes  { id, body, updatedAt }
 //   tasks  { id, date, title, done, position }   one-off to-dos for a day, apart from habits
 //   dayNotes    { date, body, updatedAt }        free text for a day, under its tasks
-//   goals       { id, title, deadline, createdOn, archivedOn, outcome }   outcome: null | 'done' | 'dropped'
+//   goals       { id, title, body, deadline, createdOn, archivedOn, outcome }   outcome: null | 'done' | 'dropped'
 //   checkpoints { id, goalId, date, title, notes, doneOn }                a check-in along a goal
 //
 // Dates are local 'YYYY-MM-DD' strings.

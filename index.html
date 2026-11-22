@@ -634,7 +634,7 @@
   .plan-body { padding: 18px 20px 20px; min-height: 96px; cursor: text; }
   .plan-body.is-editing { box-shadow: inset 0 0 0 1.5px rgba(244, 181, 69, 0.5), 0 20px 40px -18px rgba(0, 0, 0, 0.8); }
   .placeholder { color: var(--text-3); font-size: 16px; line-height: 1.5; }
-  .plan-input, .note-input {
+  .plan-input, .note-input, .goal-body-input {
     display: block;
     width: 100%;
     min-height: 120px;
@@ -679,6 +679,8 @@
   .goal-title { font: 600 24px/1.2 var(--serif); }
   .goal-due { margin-top: 4px; font-size: 15px; font-weight: 600; color: var(--amber); }
   .goal > .track { margin: 16px 0 6px; }
+  .goal-body { margin-top: 16px; padding-block: 14px; border-block: 1px solid var(--line); overflow-wrap: anywhere; }
+  .goal-body li { margin-block: 5px; }
   .goal > .carry { margin: 10px 0 12px; }
   .steps { margin-top: 10px; }
   /* Each step mirrors to its own text, so they stay separate rows rather than one joined line. */
@@ -702,6 +704,10 @@
 
   .goal-form { padding: 4px 18px; }
   .goal-input { display: block; width: 100%; height: 58px; padding: 0; border: 0; outline: none; background: transparent; font: 600 22px/1.2 var(--serif); }
+  .goal-body-field { display: grid; gap: 8px; padding-block: 14px; border-top: 1px solid var(--line); }
+  .goal-body-field > span { font-size: 15px; font-weight: 600; }
+  .goal-body-input { min-height: 76px; }
+  .goal-body-input:focus-visible { outline: 2px solid var(--amber); outline-offset: 4px; border-radius: 2px; }
   .field { display: flex; align-items: center; gap: 10px; min-height: 54px; border-top: 1px solid var(--line); font-size: 16px; }
   .field-note { font-size: 14px; font-weight: 600; white-space: nowrap; color: var(--amber); }
   .field input[type="date"] {

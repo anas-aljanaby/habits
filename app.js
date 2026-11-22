@@ -221,10 +221,10 @@ function checkInsOn(k) {
     .sort((a, b) => a.date.localeCompare(b.date));
 }
 
-// Saved on its first edit; one left without a name or check-ins is dropped (see render).
+// Saved on its first edit; one left without a title, body, or check-ins is dropped (see render).
 function newGoal() {
   const t = todayKey();
-  const goal = { id: crypto.randomUUID(), title: '', deadline: addDays(t, 30), createdOn: t, archivedOn: null, outcome: null };
+  const goal = { id: crypto.randomUUID(), title: '', body: '', deadline: addDays(t, 30), createdOn: t, archivedOn: null, outcome: null };
   state.goals.push(goal);
   location.hash = `goal/${goal.id}`;
 }
@@ -275,7 +275,7 @@ function tidyGoal(id) {
   const goal = findGoal(id);
   if (!goal) return;
   for (const c of checkpointsOf(id)) if (!c.title.trim() && !c.notes.trim()) removeCheckpoint(c.id);
-  if (!goal.title.trim() && !checkpointsOf(id).length) removeGoal(id);
+  if (!goal.title.trim() && !goal.body?.trim() && !checkpointsOf(id).length) removeGoal(id);
 }
 
 // Text saves are debounced; flushed when the app is backgrounded.
@@ -725,6 +725,7 @@ function planPage() {
 function goalCard(goal, popped) {
   const cps = checkpointsOf(goal.id);
   const t = todayKey();
+  const body = goal.body?.trim();
   return `
     <section class="goal surface">
       <div class="goal-head" dir="${dirOf(goal.title)}">
@@ -735,6 +736,7 @@ function goalCard(goal, popped) {
         <button class="pill" data-action="open-goal" data-id="${goal.id}">Edit</button>
       </div>
       ${track(goal)}
+      ${body ? `<div class="md goal-body">${markdown(body)}</div>` : ''}
       ${cps.length ? `
         <ol class="steps">
           ${cps.map(c => `
@@ -761,12 +763,18 @@ function goalEditor(goal) {
       <button class="round-btn danger" data-action="delete-goal" data-id="${goal.id}" aria-label="Delete goal">${icon.trash}</button>
     </header>
     <div class="goal-form surface">
-      <input class="goal-input" data-goal="${goal.id}" value="${esc(goal.title)}" maxlength="120" dir="auto"
+      <input class="goal-input" data-goal="${goal.id}" data-field="title" value="${esc(goal.title)}" maxlength="120" dir="auto"
         placeholder="Goal, e.g. Finish Hifz before travel" enterkeyhint="done" autocomplete="off" aria-label="Goal">
       <label class="field">
         <span>Deadline</span>
         <span class="field-note">${countdown(daysBetween(todayKey(), goal.deadline))}</span>
         <input type="date" data-goal="${goal.id}" value="${goal.deadline}" required>
+      </label>
+      <label class="goal-body-field">
+        <span>Goal details</span>
+        <textarea class="goal-body-input" data-goal="${goal.id}" data-field="body" dir="auto" rows="3"
+          placeholder="Describe the goal. Use # for headings, - for bullets, and **bold** for emphasis.">
+${esc(goal.body ?? '')}</textarea>
       </label>
     </div>
     <div class="section-head">
@@ -974,6 +982,7 @@ const actions = {
   'restore-goal': el => archiveGoal(el.dataset.id, null),
   'delete-goal': el => {
     if (!confirm('Delete this goal and its check-ins? To keep it under Past goals, archive it instead.')) return;
+    flush();
     removeGoal(el.dataset.id);
     location.hash = 'plan';
   },
@@ -1036,9 +1045,10 @@ $app.addEventListener('input', e => {
     state.dayNotes[note.date] = note;
     autosize(el);
     later(`day:${note.date}`, () => store.saveDayNote(note));
-  } else if (el.matches('.goal-input')) {
+  } else if (el.matches('[data-goal][data-field]')) {
     const goal = findGoal(el.dataset.goal);
-    goal.title = el.value.trim();
+    goal[el.dataset.field] = el.dataset.field === 'title' ? el.value.trim() : el.value;
+    if (el.matches('textarea')) autosize(el);
     later(goal.id, () => store.saveGoals([goal]));
   } else if (el.matches('[data-cp][data-field]')) {
     const cp = findCheckpoint(el.dataset.cp);
